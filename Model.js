@@ -9,10 +9,13 @@ var MS_PER_MINUTE = 60000
 // examples spread around the world, so the clock does something at once.
 var DEFAULT_PEOPLE = "Grandma=Phoenix; Cousin Mia=Berlin; Uncle Ken=Tokyo"
 
+// `face` is the analog clock beside the digits; `gameStep` is how finely
+// the set-the-clock game rounds a target: quarter hours for the band that
+// is learning "half past" and "quarter to", five minutes after that.
 var BANDS = {
-  explorer:  { maxPeople: 3, digits: false, dayLabel: false, offsets: false, label: "Explorer" },
-  tinkerer:  { maxPeople: 4, digits: true,  dayLabel: true,  offsets: false, label: "Tinkerer" },
-  navigator: { maxPeople: 6, digits: true,  dayLabel: true,  offsets: true,  label: "Navigator" }
+  explorer:  { maxPeople: 3, digits: false, dayLabel: false, offsets: false, face: false, gameStep: 0,  label: "Explorer" },
+  tinkerer:  { maxPeople: 4, digits: true,  dayLabel: true,  offsets: false, face: true,  gameStep: 15, label: "Tinkerer" },
+  navigator: { maxPeople: 6, digits: true,  dayLabel: true,  offsets: true,  face: true,  gameStep: 5,  label: "Navigator" }
 }
 
 function bandRules(band) {
@@ -365,6 +368,124 @@ function barGlyph(isDay) {
   return isDay ? SUN_GLYPH : MOON_GLYPH
 }
 
+// ---- the analog face and the set-the-clock game
+
+function mod(n, m) { return ((n % m) + m) % m }
+
+function clamp01(x) { return Math.max(0, Math.min(1, x)) }
+
+// Minutes of day rounded to the nearest step, wrapping at midnight.
+function roundMinutes(minutesOfDay, step) {
+  var s = step > 0 ? step : 1
+  return mod(Math.round(minutesOfDay / s) * s, 1440)
+}
+
+// Hand angles in degrees clockwise from twelve. The hour hand is geared to
+// the minutes, so at half past it sits halfway to the next numeral.
+function handAngles(minutesOfDay) {
+  var m = mod(minutesOfDay, 720)
+  return { hour: m / 2, minute: (m % 60) * 6 }
+}
+
+var HOUR_WORDS = ["twelve", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven"]
+var MINUTE_WORDS = { 5: "five", 10: "ten", 20: "twenty", 25: "twenty-five" }
+
+// The face read aloud the way school teaches it: "half past two", "quarter
+// to three", "ten past four", "7 minutes to five".
+function clockWords(minutesOfDay) {
+  var m = mod(minutesOfDay, 1440)
+  var hour = HOUR_WORDS[Math.floor(m / 60) % 12]
+  var next = HOUR_WORDS[(Math.floor(m / 60) + 1) % 12]
+  var minute = m % 60
+  if (minute === 0) return hour + " o'clock"
+  if (minute === 15) return "quarter past " + hour
+  if (minute === 30) return "half past " + hour
+  if (minute === 45) return "quarter to " + next
+  if (minute < 30) return (MINUTE_WORDS[minute] || minute + " minutes") + " past " + hour
+  var to = 60 - minute
+  return (MINUTE_WORDS[to] || to + " minutes") + " to " + next
+}
+
+// "in the morning", "in the afternoon", "in the evening", "at night".
+function dayPartWords(minutesOfDay) {
+  var h = mod(minutesOfDay, 1440) / 60
+  if (h < 5) return "at night"
+  if (h < 12) return "in the morning"
+  if (h < 17) return "in the afternoon"
+  if (h < 20) return "in the evening"
+  return "at night"
+}
+
+function solarTimesFor(utcMs, place, offsetSeconds) {
+  return place.lat === null || place.lat === undefined
+    ? flatSolarTimes(utcMs, offsetSeconds)
+    : solarTimes(utcMs, place.lat, place.lon, offsetSeconds)
+}
+
+// One round of the game: a person, their time frozen when the round starts
+// and rounded to the band's step, and where the hands begin. They start at
+// twelve in the same half of the day, like a toy clock reset, so the child
+// sets the hour and then the minutes without a trip round the other half.
+// The goal is where the sun or the moon sits at the rounded target, so the
+// moving body lands exactly in the ring when the hands are right.
+function gameRound(person, offsetInfo, frozenMs, routine, rules, hourFormat) {
+  var offset = offsetInfo.offsetSeconds
+  var parts = localParts(frozenMs, offset)
+  var step = rules && rules.gameStep > 0 ? rules.gameStep : 5
+  var target = roundMinutes(parts.minutesOfDay, step)
+  var start = target < 720 ? 0 : 720
+  if (start === target) start = mod(target - 180, 1440)
+  var goalMs = frozenMs + (target - parts.minutesOfDay) * MS_PER_MINUTE
+  var goal = skyPosition(goalMs, solarTimesFor(goalMs, person, offset))
+  var activity = activityAt(target, routine, parts.weekend)
+  var words = clockWords(target) + " " + dayPartWords(target)
+  return {
+    name: person.name,
+    city: person.city,
+    zone: person.zone,
+    lat: person.lat === undefined ? null : person.lat,
+    lon: person.lon === undefined ? null : person.lon,
+    offsetSeconds: offset,
+    frozenMs: frozenMs,
+    exactMinutes: parts.minutesOfDay,
+    targetMinutes: target,
+    startHands: start,
+    targetWords: words,
+    targetDigits: rules && rules.digits ? formatTime(Math.floor(target / 60), target % 60, hourFormat) : "",
+    prompt: "It's about " + words + " in " + person.city + ".",
+    task: "Turn the hands until the " + (goal.isDay ? "sun" : "moon") + " sits in the ring.",
+    solvedSentence: "That's it! In " + person.city + " it's about " + words + ". " + person.name + " is probably " + activity.label + ".",
+    goalIsDay: goal.isDay,
+    goalT: clamp01(goal.t)
+  }
+}
+
+// The face and the sky for the hands as the child has set them. `hands` is
+// a running count of minutes, so turning on past midnight keeps the sky
+// moving instead of jumping. `delta` is the shortest way to the target in
+// minutes, signed; zero is solved. Twelve hours off is the trap the sky
+// exists to show: the hands read right and the sky says otherwise.
+function gameView(round, hands) {
+  var minutes = mod(hands, 1440)
+  var instant = round.frozenMs + (hands - round.exactMinutes) * MS_PER_MINUTE
+  var sky = skyPosition(instant, solarTimesFor(instant, round, round.offsetSeconds))
+  var delta = mod(round.targetMinutes - hands + 720, 1440) - 720
+  var hint
+  if (delta === 0) hint = "That's it!"
+  else if (Math.abs(delta) === 720) hint = "The hands are right, but it's the wrong half of the day. Keep going round."
+  else if (Math.abs(delta) <= 30) hint = delta > 0 ? "Nearly. A little further on." : "Nearly. A little back."
+  else hint = delta > 0 ? "Turn the hands forward." : "Turn the hands back."
+  return {
+    minutesOfDay: minutes,
+    angles: handAngles(minutes),
+    isDay: sky.isDay,
+    t: clamp01(sky.t),
+    delta: delta,
+    solved: delta === 0,
+    hint: hint
+  }
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     bandRules: bandRules,
@@ -394,6 +515,12 @@ if (typeof module !== "undefined") {
     scrubWords: scrubWords,
     tooltip: tooltip,
     barGlyph: barGlyph,
+    roundMinutes: roundMinutes,
+    handAngles: handAngles,
+    clockWords: clockWords,
+    dayPartWords: dayPartWords,
+    gameRound: gameRound,
+    gameView: gameView,
     DEFAULT_PEOPLE: DEFAULT_PEOPLE,
     SUN_GLYPH: SUN_GLYPH,
     MOON_GLYPH: MOON_GLYPH
