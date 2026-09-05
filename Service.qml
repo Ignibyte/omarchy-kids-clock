@@ -23,7 +23,9 @@ Item {
   readonly property var rules: Model.bandRules(band)
   readonly property string hourFormat: String(Model.setting(config, "hourFormat", "12"))
   readonly property var routine: Model.routineFrom(config)
-  readonly property string peopleText: String(Model.setting(config, "people", ""))
+  // The shell.json entry may be the bare id (that is what `omarchy plugin
+  // enable` writes), so every default lives here, not only in the manifest.
+  readonly property string peopleText: String(Model.setting(config, "people", Model.DEFAULT_PEOPLE))
   readonly property string homeCitySetting: String(Model.setting(config, "homeCity", ""))
 
   property var cities: []

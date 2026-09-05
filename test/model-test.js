@@ -30,6 +30,12 @@ check("clock strings parse, with am/pm and fallbacks", () => {
   assert.strictEqual(Model.parseClock("25:00", 99), 99)
 })
 
+check("the default people parse, so a bare shell.json entry still shows three cards", () => {
+  const people = Model.parsePeople(Model.DEFAULT_PEOPLE, cities, Model.bandRules("explorer").maxPeople)
+  assert.strictEqual(people.length, 3)
+  assert.deepStrictEqual(people.map(p => p.city), ["Phoenix", "Berlin", "Tokyo"])
+})
+
 check("people parse by city name, zone tail or full zone, capped by the band", () => {
   const people = Model.parsePeople("Grandma=Phoenix; Cousin Mia=Europe/Berlin; Uncle Ken=tokyo; Pen pal=Asia/Doha; Extra=Sydney", cities, 3)
   assert.strictEqual(people.length, 3)

@@ -5,6 +5,10 @@
 var MS_PER_DAY = 86400000
 var MS_PER_MINUTE = 60000
 
+// What a fresh install shows before a parent names real people: three
+// examples spread around the world, so the clock does something at once.
+var DEFAULT_PEOPLE = "Grandma=Phoenix; Cousin Mia=Berlin; Uncle Ken=Tokyo"
+
 var BANDS = {
   explorer:  { maxPeople: 3, digits: false, dayLabel: false, offsets: false, label: "Explorer" },
   tinkerer:  { maxPeople: 4, digits: true,  dayLabel: true,  offsets: false, label: "Tinkerer" },
@@ -390,6 +394,7 @@ if (typeof module !== "undefined") {
     scrubWords: scrubWords,
     tooltip: tooltip,
     barGlyph: barGlyph,
+    DEFAULT_PEOPLE: DEFAULT_PEOPLE,
     SUN_GLYPH: SUN_GLYPH,
     MOON_GLYPH: MOON_GLYPH
   }

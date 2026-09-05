@@ -17,7 +17,12 @@ Item {
   property var manifest: null
 
   readonly property string pluginId: manifest && manifest.id ? String(manifest.id) : "ignibyte.kids-clock"
-  readonly property var service: shell && typeof shell.serviceFor === "function" ? shell.serviceFor(pluginId) : null
+
+  // The shell assigns the plugin's own service here when it mounts the
+  // overlay. `clock` falls back to a lookup for the moment before that lands.
+  property var service: null
+  readonly property var clock: service ? service
+    : (shell && typeof shell.serviceFor === "function" ? shell.serviceFor(pluginId) : null)
 
   property bool opened: false
 
@@ -46,10 +51,10 @@ Item {
   property int cardWidth: Math.min(Style.space(980), panel.width - Style.gapsOut * 2)
   property int cardHeight: Math.min(Style.space(640), panel.height - Style.gapsOut * 2)
 
-  readonly property var home: service ? service.home : null
-  readonly property var rows: service ? service.rows : []
-  readonly property string scrubWords: service ? service.scrubWords : ""
-  readonly property bool scrubbing: service ? service.scrubMinutes !== 0 : false
+  readonly property var home: clock ? clock.home : null
+  readonly property var rows: clock ? clock.rows : []
+  readonly property string scrubWords: clock ? clock.scrubWords : ""
+  readonly property bool scrubbing: clock ? clock.scrubMinutes !== 0 : false
 
   function open(payloadJson) {
     root.opened = true
@@ -62,7 +67,7 @@ Item {
 
   function dismiss() {
     root.opened = false
-    if (root.service) root.service.resetScrub()
+    if (root.clock) root.clock.resetScrub()
     if (root.shell && typeof root.shell.hide === "function") root.shell.hide(root.pluginId)
   }
 
@@ -214,17 +219,17 @@ Item {
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: function(event) {
           if (event.key === Qt.Key_Escape) {
-            if (root.scrubbing && root.service) root.service.resetScrub()
+            if (root.scrubbing && root.clock) root.clock.resetScrub()
             else root.dismiss()
             event.accepted = true
           } else if (event.key === Qt.Key_Right) {
-            if (root.service) root.service.scrub(event.modifiers & Qt.ShiftModifier ? 15 : 60)
+            if (root.clock) root.clock.scrub(event.modifiers & Qt.ShiftModifier ? 15 : 60)
             event.accepted = true
           } else if (event.key === Qt.Key_Left) {
-            if (root.service) root.service.scrub(event.modifiers & Qt.ShiftModifier ? -15 : -60)
+            if (root.clock) root.clock.scrub(event.modifiers & Qt.ShiftModifier ? -15 : -60)
             event.accepted = true
           } else if (event.key === Qt.Key_0 || event.key === Qt.Key_Home || event.key === Qt.Key_Space) {
-            if (root.service) root.service.resetScrub()
+            if (root.clock) root.clock.resetScrub()
             event.accepted = true
           }
         }
