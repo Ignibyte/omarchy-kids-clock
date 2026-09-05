@@ -29,6 +29,8 @@ Item {
   readonly property string homeCitySetting: String(Model.setting(config, "homeCity", ""))
 
   property var cities: []
+  // Natural Earth 1:110m land outlines, rings of [lon, lat, ...], for the map.
+  property var land: []
   readonly property var people: Model.parsePeople(peopleText, cities, rules.maxPeople)
 
   // Home: the system zone, its offset straight from the JavaScript Date,
@@ -142,7 +144,16 @@ Item {
     }
   }
 
-  onSourceDirChanged: if (sourceDir !== "") citiesFile.reload()
+  FileView {
+    id: landFile
+    path: root.sourceDir === "" ? "" : root.sourceDir + "/data/land.json"
+    printErrors: true
+    onLoaded: {
+      try { root.land = JSON.parse(text()) } catch (e) { console.warn("kids-clock: land.json unreadable:", e) }
+    }
+  }
+
+  onSourceDirChanged: if (sourceDir !== "") { citiesFile.reload(); landFile.reload() }
 
   Timer {
     interval: 1000

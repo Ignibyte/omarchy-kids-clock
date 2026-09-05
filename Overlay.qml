@@ -11,7 +11,8 @@ import "Model.js" as Model
 // the digits on the bands that read them, then a card for each person with
 // their own small sky, what they are probably doing, and whether it is a
 // good time to call. Left and right move the sun an hour; 0 comes back to
-// now; Enter opens the set-the-clock game; Escape closes.
+// now; Enter opens the set-the-clock game; M swaps in the world map with
+// the night side on the band that reads maps; Escape closes.
 Item {
   id: root
 
@@ -47,6 +48,8 @@ Item {
   readonly property color horizon: Util.alpha(foreground, 0.35)
   readonly property color quiet: Util.alpha(foreground, 0.62)
   readonly property color dial: Util.alpha(foreground, 0.05)
+  readonly property color landColor: Util.alpha(foreground, 0.30)
+  readonly property color nightShade: Util.alpha(Qt.darker(background, 1.8), 0.6)
   readonly property color goodDot: Color.accent
   readonly property color busyDot: Util.alpha(foreground, 0.45)
   readonly property color asleepDot: Util.alpha(foreground, 0.2)
@@ -60,6 +63,18 @@ Item {
   readonly property bool scrubbing: clock ? clock.scrubMinutes !== 0 : false
   readonly property var rules: clock ? clock.rules : Model.bandRules("explorer")
   readonly property bool hasFace: rules ? rules.face === true : false
+  readonly property bool hasMap: rules ? rules.map === true : false
+
+  // ---- the map: the night side and the overhead sun at the shown instant,
+  // computed only while the map is up.
+  property bool showMap: false
+  readonly property double shownMs: clock ? clock.shownMs : Date.now()
+  readonly property var land: clock ? clock.land : []
+  readonly property var sun: showMap ? Model.subsolarPoint(shownMs) : null
+  readonly property var night: showMap ? Model.nightPolygon(shownMs, 2) : []
+  readonly property var markers: showMap && clock && home
+    ? Model.mapMarkers(home, clock.homeCity ? clock.homeCity.lat : null, clock.homeCity ? clock.homeCity.lon : null, clock.people, rows)
+    : []
 
   // ---- the set-the-clock game. One person at a time: their time is frozen
   // when the round starts, the hands begin at twelve, and the sun under the
@@ -122,8 +137,15 @@ Item {
     currentRound = null
   }
 
+  // The payload may name a view: {"view": "map"}, "game" or "clock".
   function open(payloadJson) {
     root.opened = true
+    var payload = null
+    try { payload = JSON.parse(payloadJson || "{}") } catch (e) { payload = null }
+    var view = payload && payload.view ? String(payload.view) : ""
+    if (view === "map") root.showMap = root.hasMap
+    else if (view === "clock") root.showMap = false
+    else if (view === "game") root.startGame()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -134,13 +156,14 @@ Item {
   function dismiss() {
     root.opened = false
     root.stopGame()
+    root.showMap = false
     if (root.clock) root.clock.resetScrub()
     if (root.shell && typeof root.shell.hide === "function") root.shell.hide(root.pluginId)
   }
 
-  function toggle() {
+  function toggle(payloadJson) {
     if (root.opened) root.dismiss()
-    else root.open("{}")
+    else root.open(payloadJson || "{}")
   }
 
   // The sun or the moon travels a half ellipse from the left horizon to the
@@ -220,36 +243,9 @@ Item {
         color: root.sunColor
       }
 
-      // The moon: a crescent. The outer edge is the left half of the disc,
-      // the inner edge a shallower arc back up, so the fill between them is
-      // the lit sliver and the sky shows through the rest.
-      Shape {
+      Moon {
         visible: !sky.isDay
         anchors.fill: parent
-        antialiasing: true
-        layer.enabled: true
-        layer.samples: 4
-        ShapePath {
-          fillColor: root.moonColor
-          strokeWidth: 0
-          strokeColor: "transparent"
-          startX: body.width * 0.5
-          startY: 0
-          PathArc {
-            x: body.width * 0.5
-            y: body.height
-            radiusX: body.width / 2
-            radiusY: body.height / 2
-            direction: PathArc.Counterclockwise
-          }
-          PathArc {
-            x: body.width * 0.5
-            y: 0
-            radiusX: body.width * 0.62
-            radiusY: body.height * 0.62
-            direction: PathArc.Clockwise
-          }
-        }
       }
     }
 
@@ -280,6 +276,215 @@ Item {
           startAngle: 0
           sweepAngle: 360
         }
+      }
+    }
+  }
+
+  // The moon: a crescent. The outer edge is the left half of the disc, the
+  // inner edge a shallower arc back up, so the fill between them is the lit
+  // sliver and whatever is behind shows through the rest.
+  component Moon: Shape {
+    id: moon
+    antialiasing: true
+    layer.enabled: true
+    layer.samples: 4
+    ShapePath {
+      fillColor: root.moonColor
+      strokeWidth: 0
+      strokeColor: "transparent"
+      startX: moon.width * 0.5
+      startY: 0
+      PathArc {
+        x: moon.width * 0.5
+        y: moon.height
+        radiusX: moon.width / 2
+        radiusY: moon.height / 2
+        direction: PathArc.Counterclockwise
+      }
+      PathArc {
+        x: moon.width * 0.5
+        y: 0
+        radiusX: moon.width * 0.62
+        radiusY: moon.height * 0.62
+        direction: PathArc.Clockwise
+      }
+    }
+  }
+
+  // The world in plate carrée: the land from Natural Earth, the night side
+  // as one shaded polygon that sweeps west as the shown instant moves, a
+  // sun where it is overhead, a moon where it is midnight, and a dot for
+  // home and for each person with a place.
+  component WorldMap: Item {
+    id: map
+    property var land: []
+    property var night: []
+    property var sun: null
+    property var markers: []
+    clip: true
+    readonly property string landPath: Model.landPath(land, width, height)
+    readonly property string nightPath: Model.pointsPath(night, width, height)
+    readonly property var sunPos: sun ? Model.mapPoint(sun.lon, sun.lat, width, height) : [-100, -100]
+    readonly property var moonPos: sun ? Model.mapPoint(((sun.lon + 360) % 360) - 180, -sun.lat, width, height) : [-100, -100]
+
+    Rectangle {
+      anchors.fill: parent
+      radius: root.cornerRadius
+      color: root.daySky
+    }
+
+    Shape {
+      anchors.fill: parent
+      antialiasing: true
+      layer.enabled: true
+      layer.samples: 4
+      ShapePath {
+        fillColor: root.landColor
+        fillRule: ShapePath.OddEvenFill
+        strokeWidth: 0
+        strokeColor: "transparent"
+        PathSvg { path: map.landPath }
+      }
+    }
+
+    Shape {
+      anchors.fill: parent
+      antialiasing: true
+      layer.enabled: true
+      layer.samples: 4
+      ShapePath {
+        fillColor: root.nightShade
+        strokeWidth: 0
+        strokeColor: "transparent"
+        PathSvg { path: map.nightPath }
+      }
+    }
+
+    Rectangle {
+      visible: !!map.sun
+      width: Style.space(18)
+      height: width
+      radius: width / 2
+      color: root.sunColor
+      x: map.sunPos[0] - width / 2
+      y: map.sunPos[1] - height / 2
+      Behavior on x { NumberAnimation { duration: 420; easing.type: Easing.OutCubic } }
+      Behavior on y { NumberAnimation { duration: 420; easing.type: Easing.OutCubic } }
+    }
+
+    Moon {
+      visible: !!map.sun
+      width: Style.space(16)
+      height: width
+      x: map.moonPos[0] - width / 2
+      y: map.moonPos[1] - height / 2
+      Behavior on x { NumberAnimation { duration: 420; easing.type: Easing.OutCubic } }
+      Behavior on y { NumberAnimation { duration: 420; easing.type: Easing.OutCubic } }
+    }
+
+    Repeater {
+      model: map.markers
+      Item {
+        id: marker
+        required property var modelData
+        readonly property var pos: Model.mapPoint(modelData.lon, modelData.lat, map.width, map.height)
+        readonly property bool flip: pos[0] + labelBox.width + Style.space(24) > map.width
+        x: pos[0]
+        y: pos[1]
+
+        Rectangle {
+          id: markerDot
+          width: Style.space(modelData.home ? 16 : 12)
+          height: width
+          radius: width / 2
+          x: -width / 2
+          y: -height / 2
+          color: modelData.home ? "transparent" : root.sunColor
+          border.width: modelData.home ? Math.max(2, Style.space(3)) : 0
+          border.color: root.foreground
+        }
+
+        Rectangle {
+          id: labelBox
+          x: marker.flip ? -width - Style.space(12) : Style.space(12)
+          y: -height / 2
+          width: labelRow.implicitWidth + Style.space(12)
+          height: labelRow.implicitHeight + Style.space(6)
+          radius: Math.max(2, root.cornerRadius / 2)
+          color: Util.alpha(root.background, 0.72)
+
+          Row {
+            id: labelRow
+            anchors.centerIn: parent
+            spacing: Style.spacing.sm
+            Text {
+              textFormat: Text.PlainText
+              text: marker.modelData.name
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.subtitle
+              font.bold: true
+            }
+            Text {
+              visible: text !== ""
+              textFormat: Text.PlainText
+              text: marker.modelData.label
+              color: root.quiet
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.subtitle
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // The home header: the sentence, the digits when the band allows them,
+  // and the scrub banner. Anchors rather than a Row: the digits sit on the
+  // right at their own width and the sentence wraps into whatever is left.
+  component HomeHeader: Item {
+    id: header
+    height: Math.max(headerColumn.implicitHeight, headerTime.implicitHeight)
+
+    Text {
+      id: headerTime
+      anchors.right: parent.right
+      anchors.top: parent.top
+      textFormat: Text.PlainText
+      text: root.home ? root.home.timeText : ""
+      visible: text !== ""
+      color: root.foreground
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.displayLarge
+      font.bold: true
+    }
+
+    Column {
+      id: headerColumn
+      anchors.left: parent.left
+      anchors.right: headerTime.visible ? headerTime.left : parent.right
+      anchors.rightMargin: headerTime.visible ? Style.spacing.lg : 0
+      anchors.top: parent.top
+      spacing: Style.spacing.xs
+
+      Text {
+        width: parent.width
+        textFormat: Text.PlainText
+        text: root.home ? root.home.sentence : "Finding the sun..."
+        color: root.foreground
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.displayLarge
+        wrapMode: Text.WordWrap
+      }
+      Text {
+        width: parent.width
+        visible: root.scrubWords !== ""
+        textFormat: Text.PlainText
+        text: root.scrubWords + ". Press 0 to come back to now."
+        color: root.sunColor
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.title
+        wrapMode: Text.WordWrap
       }
     }
   }
@@ -480,7 +685,11 @@ Item {
           if (event.key === Qt.Key_Escape) {
             if (root.playing) root.stopGame()
             else if (root.scrubbing && root.clock) root.clock.resetScrub()
+            else if (root.showMap) root.showMap = false
             else root.dismiss()
+            event.accepted = true
+          } else if (event.key === Qt.Key_M) {
+            if (root.hasMap && !root.playing) root.showMap = !root.showMap
             event.accepted = true
           } else if (event.key === Qt.Key_Right || event.key === Qt.Key_Left) {
             var sign = event.key === Qt.Key_Right ? 1 : -1
@@ -525,7 +734,7 @@ Item {
         // ---- the clock
         Item {
           id: clockView
-          visible: !root.playing
+          visible: !root.playing && !root.showMap
           anchors.fill: parent
           anchors.bottomMargin: hint.height + content.gap
 
@@ -553,57 +762,12 @@ Item {
               }
             }
 
-            // Anchors rather than a Row: the digits sit on the right at
-            // their own width and the sentence wraps into whatever is left.
-            Item {
+            HomeHeader {
               id: homeHeader
               anchors.left: parent.left
               anchors.right: homeFace.visible ? homeFace.left : parent.right
               anchors.rightMargin: homeFace.visible ? content.gap * 2 : 0
               anchors.top: parent.top
-              height: Math.max(homeColumn.implicitHeight, homeTime.implicitHeight)
-
-              Text {
-                id: homeTime
-                anchors.right: parent.right
-                anchors.top: parent.top
-                textFormat: Text.PlainText
-                text: root.home ? root.home.timeText : ""
-                visible: text !== ""
-                color: root.foreground
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.displayLarge
-                font.bold: true
-              }
-
-              Column {
-                id: homeColumn
-                anchors.left: parent.left
-                anchors.right: homeTime.visible ? homeTime.left : parent.right
-                anchors.rightMargin: homeTime.visible ? Style.spacing.lg : 0
-                anchors.top: parent.top
-                spacing: Style.spacing.xs
-
-                Text {
-                  width: parent.width
-                  textFormat: Text.PlainText
-                  text: root.home ? root.home.sentence : "Finding the sun..."
-                  color: root.foreground
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.displayLarge
-                  wrapMode: Text.WordWrap
-                }
-                Text {
-                  width: parent.width
-                  visible: root.scrubWords !== ""
-                  textFormat: Text.PlainText
-                  text: root.scrubWords + ". Press 0 to come back to now."
-                  color: root.sunColor
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.title
-                  wrapMode: Text.WordWrap
-                }
-              }
             }
 
             Sky {
@@ -729,6 +893,48 @@ Item {
           }
         }
 
+        // ---- the map: the header, the world, and a line that says what
+        // the shading means.
+        Item {
+          id: mapView
+          visible: !root.playing && root.showMap
+          anchors.fill: parent
+          anchors.bottomMargin: hint.height + content.gap
+
+          HomeHeader {
+            id: mapHeader
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+          }
+
+          WorldMap {
+            id: worldMap
+            anchors.top: mapHeader.bottom
+            anchors.topMargin: content.gap
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: Math.min(parent.width, Math.floor((parent.height - mapHeader.height - mapCaption.height - content.gap * 2) * 2))
+            height: Math.round(width / 2)
+            land: root.land
+            night: root.night
+            sun: root.sun
+            markers: root.markers
+          }
+
+          Text {
+            id: mapCaption
+            anchors.top: worldMap.bottom
+            anchors.topMargin: content.gap
+            width: parent.width
+            textFormat: Text.PlainText
+            text: "The shaded part of the world is having its night. The sun is straight overhead at the little sun, and under the moon it is the middle of the night. The arrow keys move them."
+            color: root.quiet
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+            wrapMode: Text.WordWrap
+          }
+        }
+
         // ---- the game: the face on the left, the words and the sky on the
         // right, and four big buttons for anyone not on the keyboard.
         Item {
@@ -843,9 +1049,13 @@ Item {
           textFormat: Text.PlainText
           text: root.playing
             ? "←  →  five minutes     ↑  ↓  an hour     Enter  next     Esc  back to the clock"
-            : (root.hasFace
-              ? "←  →  move the sun     Enter  set the clock     0  now     Esc  close"
-              : "←  →  move the sun     0  now     Esc  close")
+            : (root.showMap
+              ? "←  →  move the sun     M  the clock     0  now     Esc  close"
+              : (root.hasMap
+                ? "←  →  move the sun     Enter  set the clock     M  the map     0  now     Esc  close"
+                : (root.hasFace
+                  ? "←  →  move the sun     Enter  set the clock     0  now     Esc  close"
+                  : "←  →  move the sun     0  now     Esc  close")))
           color: Util.alpha(root.foreground, 0.4)
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption

@@ -32,9 +32,26 @@ The age band is a parent setting. Each band adds to the one before.
 |---|---|---|
 | explorer | 3 to 5 | home and up to three people; sun, moon and words only; no digits |
 | tinkerer | 5 to 7 | adds the digital time, the analog face, "tomorrow" or "yesterday", and the set-the-clock game in quarter hours |
-| navigator | 8 to 10 | adds "3 hours ahead", up to six people; the game works in five minutes |
+| navigator | 8 to 10 | adds the world map with the night side, "3 hours ahead", up to six people; the game works in five minutes |
 
 ![The Tinkerer face: the digits, the analog face and the day labels](preview-tinkerer.png)
+
+## The map
+
+On the Navigator band, M swaps the clock for a map of the world with the
+night side shaded. The shade is the real one for the shown instant, worked
+out from the sun's declination and Greenwich solar noon, so it leans towards
+one pole in December and the other in June, and it sweeps west as the arrow
+keys move the sun. A sun marks where the sun is straight overhead, a moon
+where it is the middle of the night, a ring marks home and a dot each
+person, with their time beside it. It is a flat map rather than a globe on
+purpose: it hides no hemisphere, and the shade crossing a continent is the
+whole lesson.
+
+![The map on the Navigator face](preview-map.png)
+
+The land outlines are Natural Earth 1:110m, which is public domain, rounded
+to a tenth of a degree in `data/land.json`.
 
 ## Install
 
@@ -76,7 +93,15 @@ opens the big clock. Right click puts the sun back to now after a scrub.
 | Right, Left | move the sun an hour later or earlier; with Shift, a quarter hour |
 | 0, Home, Space | back to now |
 | Enter | open the set-the-clock game (tinkerer and navigator); clicking the face does the same |
-| Escape | back to now if the sun was moved, otherwise close |
+| M | the map, and back to the clock (navigator) |
+| Escape | back to now if the sun was moved, back to the clock from the map, otherwise close |
+
+A view can be opened directly, which suits a keybinding:
+
+```bash
+omarchy-shell shell toggle ignibyte.kids-clock '{"view":"map"}'
+omarchy-shell shell toggle ignibyte.kids-clock '{"view":"game"}'
+```
 
 ## The set-the-clock game
 
@@ -108,12 +133,14 @@ Four big round buttons under the face do the same for a mouse or a finger.
 ## How it works
 
 `Model.js` is the whole logic, free of Qt so `node test/model-test.js` runs
-it: the sunrise equation for the sun's place on the arc, the routine mapping,
-the words, the hand angles, and the game's rounds and hints. QML's JavaScript
-has no time zone tables, so `Service.qml` asks `date` for each zone's offset
-through a Quickshell process, one at a time. `Overlay.qml` draws the skies
-with QtQuick Shapes and the face from rotated rectangles, all bound to theme
-colours so they re-tint; `BarWidget.qml` is the chip.
+it: the sunrise equation for the sun's place on the arc and for the night
+side of the map, the routine mapping, the words, the hand angles, and the
+game's rounds and hints. QML's JavaScript has no time zone tables, so
+`Service.qml` asks `date` for each zone's offset through a Quickshell
+process, one at a time. `Overlay.qml` draws the skies and the map with
+QtQuick Shapes (the land as one SVG path built from the data file) and the
+face from rotated rectangles, all bound to theme colours so they re-tint;
+`BarWidget.qml` is the chip.
 
 ## Part of Omarchy Kids
 

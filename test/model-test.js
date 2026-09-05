@@ -230,4 +230,48 @@ check("the game view follows the hands, hints the shortest way and knows the twe
   assert.strictEqual(wayBack.hint, "Turn the hands back.")
 })
 
+check("the subsolar point and the night side follow the clock and the season", () => {
+  const june = Model.subsolarPoint(Date.UTC(2026, 5, 21, 12, 0))
+  assert.ok(Math.abs(june.lat - 23.44) < 0.1, "june lat " + june.lat)
+  assert.ok(Math.abs(june.lon) < 1.5, "june noon lon " + june.lon)
+  const sep = Model.subsolarPoint(Date.UTC(2026, 8, 22, 18, 0))
+  assert.ok(Math.abs(sep.lat) < 0.3, "equinox lat " + sep.lat)
+  assert.ok(Math.abs(sep.lon + 92) < 2, "18:00 UTC lon " + sep.lon)
+  const late = Model.subsolarPoint(Date.UTC(2026, 8, 5, 23, 50))
+  assert.ok(Math.abs(late.lon + 177.5) < 2, "23:50 UTC lon " + late.lon)
+  const night = Model.nightPolygon(Date.UTC(2026, 5, 21, 12, 0), 2)
+  assert.strictEqual(night.length, 181 + 2)
+  assert.deepStrictEqual(night[night.length - 1], [-180, -90], "in June the dark pole is the south pole")
+  assert.ok(Math.abs(night[90][1] + 66.56) < 0.6, "on the subsolar meridian the terminator sits on the antarctic circle: " + night[90][1])
+  const december = Model.nightPolygon(Date.UTC(2026, 11, 21, 12, 0), 2)
+  assert.deepStrictEqual(december[december.length - 1], [-180, 90])
+  assert.ok(Math.abs(december[90][1] - 66.56) < 0.6, december[90][1])
+  assert.strictEqual(Model.bandRules("navigator").map, true)
+  assert.strictEqual(Model.bandRules("tinkerer").map, false)
+})
+
+check("the map projection, the paths and the land file", () => {
+  assert.deepStrictEqual(Model.mapPoint(-180, 90, 360, 180), [0, 0])
+  assert.deepStrictEqual(Model.mapPoint(0, 0, 360, 180), [180, 90])
+  assert.strictEqual(Model.landPath([[-180, 90, 180, 90, 180, -90, -180, -90]], 360, 180), "M0.0 0.0L360.0 0.0L360.0 180.0L0.0 180.0Z")
+  assert.strictEqual(Model.pointsPath([[0, 0], [10, 0], [10, 10]], 360, 180), "M180.0 90.0L190.0 90.0L190.0 80.0Z")
+  assert.strictEqual(Model.pointsPath([], 10, 10), "")
+  const land = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "data", "land.json"), "utf8"))
+  assert.ok(land.length > 100, "land rings " + land.length)
+  for (const ring of land) assert.ok(ring.length >= 6 && ring.length % 2 === 0)
+  const p = Model.landPath(land, 944, 472)
+  assert.ok(p.length > 20000 && p.indexOf("NaN") === -1)
+})
+
+check("map markers: home first, then the people with coordinates", () => {
+  const people = Model.parsePeople("Grandma=Phoenix; Pen pal=Asia/Doha", cities, 6)
+  const home = { city: "Chicago", timeText: "4:45 PM" }
+  const rows = [{ ready: true, timeText: "2:45 PM" }, { ready: false, timeText: "" }]
+  const m = Model.mapMarkers(home, 41.88, -87.63, people, rows)
+  assert.strictEqual(m.length, 2)
+  assert.strictEqual(m[0].home, true); assert.strictEqual(m[0].name, "Chicago"); assert.strictEqual(m[0].label, "4:45 PM")
+  assert.strictEqual(m[1].name, "Grandma"); assert.strictEqual(m[1].label, "2:45 PM"); assert.strictEqual(m[1].home, false)
+  assert.strictEqual(Model.mapMarkers(home, null, null, people, rows).length, 1)
+})
+
 console.log(passed + " checks passed")

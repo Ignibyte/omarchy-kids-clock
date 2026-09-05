@@ -11,11 +11,12 @@ var DEFAULT_PEOPLE = "Grandma=Phoenix; Cousin Mia=Berlin; Uncle Ken=Tokyo"
 
 // `face` is the analog clock beside the digits; `gameStep` is how finely
 // the set-the-clock game rounds a target: quarter hours for the band that
-// is learning "half past" and "quarter to", five minutes after that.
+// is learning "half past" and "quarter to", five minutes after that. `map`
+// is the world map with the night side, for the band that reads maps.
 var BANDS = {
-  explorer:  { maxPeople: 3, digits: false, dayLabel: false, offsets: false, face: false, gameStep: 0,  label: "Explorer" },
-  tinkerer:  { maxPeople: 4, digits: true,  dayLabel: true,  offsets: false, face: true,  gameStep: 15, label: "Tinkerer" },
-  navigator: { maxPeople: 6, digits: true,  dayLabel: true,  offsets: true,  face: true,  gameStep: 5,  label: "Navigator" }
+  explorer:  { maxPeople: 3, digits: false, dayLabel: false, offsets: false, face: false, gameStep: 0,  map: false, label: "Explorer" },
+  tinkerer:  { maxPeople: 4, digits: true,  dayLabel: true,  offsets: false, face: true,  gameStep: 15, map: false, label: "Tinkerer" },
+  navigator: { maxPeople: 6, digits: true,  dayLabel: true,  offsets: true,  face: true,  gameStep: 5,  map: true,  label: "Navigator" }
 }
 
 function bandRules(band) {
@@ -215,17 +216,22 @@ function solarTimes(utcMs, lat, lon, offsetSeconds) {
   var meanSolar = n - lon / 360
   var anomaly = (357.5291 + 0.98560028 * meanSolar) % 360
   var center = 1.9148 * Math.sin(toRadians(anomaly)) + 0.0200 * Math.sin(toRadians(2 * anomaly)) + 0.0003 * Math.sin(toRadians(3 * anomaly))
-  var eclipticLon = (anomaly + center + 180 + 102.9372) % 360
+  // The mean longitude rather than anomaly plus a fixed perihelion: the
+  // perihelion drifts about 1.7 degrees a century, which by the 2020s put
+  // the equinox half a day late.
+  var meanLongitude = (280.4665 + 0.98564736 * meanSolar) % 360
+  var eclipticLon = (meanLongitude + center) % 360
   var transit = 2451545.0 + meanSolar + 0.0053 * Math.sin(toRadians(anomaly)) - 0.0069 * Math.sin(toRadians(2 * eclipticLon))
   var declination = Math.asin(Math.sin(toRadians(eclipticLon)) * Math.sin(toRadians(23.4397)))
   var cosHourAngle = (Math.sin(toRadians(-0.833)) - Math.sin(toRadians(lat)) * Math.sin(declination))
     / (Math.cos(toRadians(lat)) * Math.cos(declination))
   var transitMs = (transit - 2440587.5) * MS_PER_DAY
-  if (cosHourAngle >= 1) return { sunrise: null, sunset: null, transit: transitMs, polar: "night", dayStart: localMidnight }
-  if (cosHourAngle <= -1) return { sunrise: null, sunset: null, transit: transitMs, polar: "day", dayStart: localMidnight }
+  var decDegrees = toDegrees(declination)
+  if (cosHourAngle >= 1) return { sunrise: null, sunset: null, transit: transitMs, polar: "night", dayStart: localMidnight, declination: decDegrees }
+  if (cosHourAngle <= -1) return { sunrise: null, sunset: null, transit: transitMs, polar: "day", dayStart: localMidnight, declination: decDegrees }
   var hourAngle = toDegrees(Math.acos(cosHourAngle))
   var halfDay = hourAngle / 360 * MS_PER_DAY
-  return { sunrise: transitMs - halfDay, sunset: transitMs + halfDay, transit: transitMs, polar: null, dayStart: localMidnight }
+  return { sunrise: transitMs - halfDay, sunset: transitMs + halfDay, transit: transitMs, polar: null, dayStart: localMidnight, declination: decDegrees }
 }
 
 // Six-to-six stand-in for a place without coordinates.
@@ -486,6 +492,84 @@ function gameView(round, hands) {
   }
 }
 
+// ---- the map
+
+// Where the sun is straight overhead. The latitude is the declination; the
+// longitude follows Greenwich solar noon (the transit at longitude zero) at
+// fifteen degrees an hour, east positive.
+function subsolarPoint(utcMs) {
+  var times = solarTimes(utcMs, 0, 0, 0)
+  var lon = ((times.transit - utcMs) / 3600000) * 15
+  lon = ((lon + 180) % 360 + 360) % 360 - 180
+  return { lat: times.declination, lon: lon }
+}
+
+// The night side of the world at an instant, as [lon, lat] pairs: the
+// terminator from west to east, then round the dark pole. With the sun
+// overhead at declination d, the terminator at hour angle H sits where
+// tan(lat) = -cos(H) / tan(d).
+function nightPolygon(utcMs, stepDegrees) {
+  var step = stepDegrees > 0 ? stepDegrees : 2
+  var sun = subsolarPoint(utcMs)
+  var dec = Math.abs(sun.lat) < 0.01 ? (sun.lat < 0 ? -0.01 : 0.01) : sun.lat
+  var tanDec = Math.tan(toRadians(dec))
+  var count = Math.round(360 / step)
+  var points = []
+  for (var i = 0; i <= count; i++) {
+    var lon = -180 + i * step
+    var hourAngle = toRadians(lon - sun.lon)
+    points.push([lon, toDegrees(Math.atan(-Math.cos(hourAngle) / tanDec))])
+  }
+  var pole = dec > 0 ? -90 : 90
+  points.push([180, pole])
+  points.push([-180, pole])
+  return points
+}
+
+// Plate carrée: longitude straight across, latitude straight down.
+function mapPoint(lon, lat, width, height) {
+  return [(lon + 180) / 360 * width, (90 - lat) / 180 * height]
+}
+
+// An SVG path for rings given as flat [lon, lat, lon, lat, ...] arrays.
+function landPath(rings, width, height) {
+  var out = []
+  for (var r = 0; r < rings.length; r++) {
+    var ring = rings[r]
+    for (var i = 0; i + 1 < ring.length; i += 2) {
+      var p = mapPoint(ring[i], ring[i + 1], width, height)
+      out.push((i === 0 ? "M" : "L") + p[0].toFixed(1) + " " + p[1].toFixed(1))
+    }
+    out.push("Z")
+  }
+  return out.join("")
+}
+
+// The same for one ring of [lon, lat] pairs.
+function pointsPath(points, width, height) {
+  var out = []
+  for (var i = 0; i < points.length; i++) {
+    var p = mapPoint(points[i][0], points[i][1], width, height)
+    out.push((i === 0 ? "M" : "L") + p[0].toFixed(1) + " " + p[1].toFixed(1))
+  }
+  return out.length ? out.join("") + "Z" : ""
+}
+
+// The dots on the map: home first, then every person with coordinates.
+function mapMarkers(home, homeLat, homeLon, people, rows) {
+  var out = []
+  if (home && homeLat !== null && homeLat !== undefined) {
+    out.push({ name: home.city, lat: homeLat, lon: homeLon, label: home.timeText || "", home: true })
+  }
+  for (var i = 0; i < people.length; i++) {
+    if (people[i].lat === null || people[i].lat === undefined) continue
+    var row = rows[i]
+    out.push({ name: people[i].name, lat: people[i].lat, lon: people[i].lon,
+      label: row && row.ready ? row.timeText : "", home: false })
+  }
+  return out
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     bandRules: bandRules,
@@ -521,6 +605,12 @@ if (typeof module !== "undefined") {
     dayPartWords: dayPartWords,
     gameRound: gameRound,
     gameView: gameView,
+    subsolarPoint: subsolarPoint,
+    nightPolygon: nightPolygon,
+    mapPoint: mapPoint,
+    landPath: landPath,
+    pointsPath: pointsPath,
+    mapMarkers: mapMarkers,
     DEFAULT_PEOPLE: DEFAULT_PEOPLE,
     SUN_GLYPH: SUN_GLYPH,
     MOON_GLYPH: MOON_GLYPH
