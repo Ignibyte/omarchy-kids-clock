@@ -68,8 +68,14 @@ where Omarchy keeps every plugin's settings.
 
 ## Settings
 
-Open Setup, then Plugins, then Sun Clock, or edit the plugin's entry in
-`~/.config/omarchy/shell.json`.
+Omarchy 4.0.2 has no settings screen for plugins yet, so the settings are
+edited on the command line or in the plugin's entry in
+`~/.config/omarchy/shell.json`:
+
+```bash
+omarchy-shell shell setBarWidget ignibyte.kids-clock people '"Grandma=Phoenix; Nana=Sydney"'
+omarchy-shell shell setBarWidget ignibyte.kids-clock band '"tinkerer"'
+```
 
 | Key | Default | Meaning |
 |---|---|---|
