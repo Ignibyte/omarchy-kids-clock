@@ -11,6 +11,8 @@ their own sky, whether they are awake, what they are probably doing, and
 whether it is a good time to call. The arrow keys move the sun forward and
 back an hour at a time, so a child can watch it become bedtime in Tokyo.
 
+![The big clock on the Explorer face, Tokyo Night theme](preview.png)
+
 The plugin binds to Omarchy's theme tokens and ships no colours of its own.
 The sun is the theme accent and the moon is the theme foreground, so it
 re-tints when the theme changes, like the rest of the shell.
