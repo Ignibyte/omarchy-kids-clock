@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "id": "ignibyte.kids-clock",
+  "name": "Sun Clock",
+  "version": "0.1.0",
+  "author": "Ignibyte",
+  "description": "A clock for kids: where the sun is over the people you love, and whether they are awake.",
+  "license": "MIT",
+  "kinds": [
+    "service",
+    "bar-widget",
+    "overlay"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml",
+    "overlay": "Overlay.qml"
+  },
+  "barWidget": {
+    "displayName": "Sun Clock",
+    "description": "Sun or moon for home in the bar; click for the big clock",
+    "category": "Time",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "band": "explorer",
+      "people": "Grandma=Phoenix; Cousin Mia=Berlin; Uncle Ken=Tokyo",
+      "homeCity": "",
+      "wakeTime": "07:00",
+      "schoolStart": "08:30",
+      "schoolEnd": "15:00",
+      "dinnerTime": "18:00",
+      "bedTime": "20:00",
+      "hourFormat": "12"
+    },
+    "schema": [
+      {
+        "key": "band",
+        "type": "enum",
+        "label": "Age band",
+        "options": [
+          "explorer",
+          "tinkerer",
+          "navigator"
+        ],
+        "defaultValue": "explorer",
+        "description": "explorer (3-5): sun, moon and words only. tinkerer (5-7): adds the digits and today/tomorrow. navigator (8-10): adds hours ahead or behind."
+      },
+      {
+        "key": "people",
+        "type": "string",
+        "label": "People",
+        "defaultValue": "Grandma=Phoenix; Cousin Mia=Berlin; Uncle Ken=Tokyo",
+        "description": "Name=City pairs separated by semicolons. Cities from the built-in list, or an IANA zone such as America/Phoenix."
+      },
+      {
+        "key": "homeCity",
+        "type": "string",
+        "label": "Home city",
+        "defaultValue": "",
+        "description": "Blank picks the city that matches the system time zone."
+      },
+      {
+        "key": "wakeTime",
+        "type": "string",
+        "label": "Family routine: wake up",
+        "defaultValue": "07:00"
+      },
+      {
+        "key": "schoolStart",
+        "type": "string",
+        "label": "Family routine: school starts",
+        "defaultValue": "08:30"
+      },
+      {
+        "key": "schoolEnd",
+        "type": "string",
+        "label": "Family routine: school ends",
+        "defaultValue": "15:00"
+      },
+      {
+        "key": "dinnerTime",
+        "type": "string",
+        "label": "Family routine: dinner",
+        "defaultValue": "18:00"
+      },
+      {
+        "key": "bedTime",
+        "type": "string",
+        "label": "Family routine: bed",
+        "defaultValue": "20:00"
+      },
+      {
+        "key": "hourFormat",
+        "type": "enum",
+        "label": "Hour format",
+        "options": [
+          "12",
+          "24"
+        ],
+        "defaultValue": "12"
+      }
+    ]
+  }
+}
