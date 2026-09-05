@@ -25,7 +25,9 @@ Item {
   readonly property var routine: Model.routineFrom(config)
   // The shell.json entry may be the bare id (that is what `omarchy plugin
   // enable` writes), so every default lives here, not only in the manifest.
-  readonly property string peopleText: String(Model.setting(config, "people", Model.DEFAULT_PEOPLE))
+  // An entry with no people key shows the examples; an empty string, which
+  // is what removing everyone leaves behind, shows nobody.
+  readonly property string peopleText: config.people === undefined || config.people === null ? Model.DEFAULT_PEOPLE : String(config.people)
   readonly property string homeCitySetting: String(Model.setting(config, "homeCity", ""))
 
   property var cities: []

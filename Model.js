@@ -90,14 +90,24 @@ function normalizeKey(text) {
   return trim(text).toLowerCase().replace(/[\s_-]+/g, " ")
 }
 
-// A place by city name, by the zone's last segment ("Los_Angeles"), or by
-// full zone id. Returns null when nothing matches.
+// A place by city name, by "City, Region" or "City, Country" when the name
+// is shared, by the zone's last segment ("Los_Angeles"), or by full zone
+// id. The list is ordered by size, so a bare shared name means the biggest.
+// Returns null when nothing matches.
 function findCity(cities, query) {
-  var q = normalizeKey(query)
-  if (q === "" || !Array.isArray(cities)) return null
+  var raw = trim(query)
+  if (raw === "" || !Array.isArray(cities)) return null
+  var comma = raw.indexOf(",")
+  var q = normalizeKey(comma === -1 ? raw : raw.slice(0, comma))
+  var qualifier = comma === -1 ? "" : normalizeKey(raw.slice(comma + 1))
+  var first = null
   for (var i = 0; i < cities.length; i++) {
-    if (normalizeKey(cities[i].name) === q) return cities[i]
+    if (normalizeKey(cities[i].name) !== q && normalizeKey(cities[i].ascii) !== q) continue
+    if (qualifier === "") return cities[i]
+    if (normalizeKey(cities[i].region) === qualifier || normalizeKey(cities[i].country) === qualifier) return cities[i]
+    if (!first) first = cities[i]
   }
+  if (first) return first
   for (var j = 0; j < cities.length; j++) {
     var zone = String(cities[j].zone || "")
     if (normalizeKey(zone) === q) return cities[j]
@@ -105,6 +115,89 @@ function findCity(cities, query) {
     if (normalizeKey(tail) === q) return cities[j]
   }
   return null
+}
+
+// What to store for a chosen place: the bare name when it is the only one,
+// otherwise "Name, Region" (or "Name, Country") so it comes back as itself.
+function cityKey(cities, city) {
+  var count = 0
+  for (var i = 0; i < cities.length; i++) if (normalizeKey(cities[i].name) === normalizeKey(city.name)) count++
+  if (count <= 1) return city.name
+  return city.name + ", " + (city.region ? city.region : city.country)
+}
+
+// "Name, Country", with the region added when another city in the same
+// list shares the name.
+function cityLabel(city, cities) {
+  var shared = false
+  for (var i = 0; i < cities.length; i++) {
+    if (cities[i] !== city && normalizeKey(cities[i].name) === normalizeKey(city.name)) { shared = true; break }
+  }
+  var parts = [city.name]
+  if (shared && city.region) parts.push(city.region)
+  if (city.country) parts.push(city.country)
+  return parts.join(", ")
+}
+
+// Places whose name starts with what was typed, then places that contain
+// it, each in list order (biggest first); an accented name also answers to
+// its plain spelling. Two letters is enough to start.
+function searchCities(cities, query, limit) {
+  var q = normalizeKey(query)
+  var max = limit > 0 ? limit : 6
+  var out = []
+  if (q.length < 2 || !Array.isArray(cities)) return out
+  var starts = [], contains = []
+  for (var i = 0; i < cities.length; i++) {
+    var name = normalizeKey(cities[i].name)
+    var ascii = cities[i].ascii ? normalizeKey(cities[i].ascii) : name
+    if (name.indexOf(q) === 0 || ascii.indexOf(q) === 0) starts.push(cities[i])
+    else if (name.indexOf(q) !== -1 || ascii.indexOf(q) !== -1) contains.push(cities[i])
+  }
+  var picked = starts.concat(contains).slice(0, max)
+  for (var p = 0; p < picked.length; p++) {
+    out.push({ city: picked[p], label: cityLabel(picked[p], picked), key: cityKey(cities, picked[p]) })
+  }
+  return out
+}
+
+// ---- editing the people setting
+
+// Every "Name=Where" pair in the setting, uncapped and unresolved, so the
+// People screen can list, remove and re-save entries it cannot place.
+function parsePeopleRaw(text) {
+  var out = []
+  var parts = String(text || "").split(/[;\n]+/)
+  for (var i = 0; i < parts.length; i++) {
+    var pair = parts[i].split("=")
+    if (pair.length < 2) continue
+    var name = trim(pair[0])
+    var where = trim(pair.slice(1).join("="))
+    if (name === "" || where === "") continue
+    out.push({ name: name, where: where })
+  }
+  return out
+}
+
+function peopleString(entries) {
+  var parts = []
+  for (var i = 0; i < entries.length; i++) {
+    parts.push(trim(entries[i].name).replace(/[;=]/g, " ") + "=" + trim(entries[i].where).replace(/[;=]/g, " "))
+  }
+  return parts.join("; ")
+}
+
+function addPerson(text, name, where) {
+  var entries = parsePeopleRaw(text)
+  entries.push({ name: name, where: where })
+  return peopleString(entries)
+}
+
+function removePerson(text, index) {
+  var entries = parsePeopleRaw(text)
+  if (index < 0 || index >= entries.length) return peopleString(entries)
+  entries.splice(index, 1)
+  return peopleString(entries)
 }
 
 // "Grandma=Phoenix; Cousin Mia=Europe/Berlin" -> people with a zone and,
@@ -611,6 +704,13 @@ if (typeof module !== "undefined") {
     landPath: landPath,
     pointsPath: pointsPath,
     mapMarkers: mapMarkers,
+    cityKey: cityKey,
+    cityLabel: cityLabel,
+    searchCities: searchCities,
+    parsePeopleRaw: parsePeopleRaw,
+    peopleString: peopleString,
+    addPerson: addPerson,
+    removePerson: removePerson,
     DEFAULT_PEOPLE: DEFAULT_PEOPLE,
     SUN_GLYPH: SUN_GLYPH,
     MOON_GLYPH: MOON_GLYPH

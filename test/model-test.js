@@ -274,4 +274,42 @@ check("map markers: home first, then the people with coordinates", () => {
   assert.strictEqual(Model.mapMarkers(home, null, null, people, rows).length, 1)
 })
 
+check("city search: starts-with first, labels that disambiguate, keys that round-trip", () => {
+  const list = [
+    { name: "Portland", country: "United States", region: "Oregon", zone: "America/Los_Angeles", lat: 45.52, lon: -122.68 },
+    { name: "Port Moresby", country: "Papua New Guinea", region: "National Capital", zone: "Pacific/Port_Moresby", lat: -9.44, lon: 147.18 },
+    { name: "Portland", country: "United States", region: "Maine", zone: "America/New_York", lat: 43.66, lon: -70.26 },
+    { name: "Newport", country: "United Kingdom", region: "Wales", zone: "Europe/London", lat: 51.58, lon: -3.0 },
+    { name: "Sydney", country: "Australia", region: "New South Wales", zone: "Australia/Sydney", lat: -33.87, lon: 151.21 }
+  ]
+  assert.deepStrictEqual(Model.searchCities(list, "p", 6), [], "one letter is too little")
+  const hits = Model.searchCities(list, "port", 6)
+  assert.deepStrictEqual(hits.map(h => h.label), ["Portland, Oregon, United States", "Port Moresby, Papua New Guinea", "Portland, Maine, United States", "Newport, United Kingdom"])
+  assert.deepStrictEqual(hits.map(h => h.key), ["Portland, Oregon", "Port Moresby", "Portland, Maine", "Newport"])
+  assert.strictEqual(Model.searchCities(list, "port", 2).length, 2)
+  assert.strictEqual(Model.searchCities(list, "SYD", 6)[0].label, "Sydney, Australia")
+  assert.strictEqual(Model.findCity(list, "Portland").region, "Oregon", "a bare shared name means the biggest")
+  assert.strictEqual(Model.findCity(list, "Portland, Maine").region, "Maine")
+  assert.strictEqual(Model.findCity(list, "portland, united states").region, "Oregon")
+  assert.strictEqual(Model.findCity(list, "Portland, Nowhere").region, "Oregon", "an unknown qualifier still finds the name")
+  assert.strictEqual(Model.findCity(cities, "Phoenix").zone, "America/Phoenix")
+  assert.strictEqual(Model.cityKey(list, list[4]), "Sydney")
+  assert.strictEqual(Model.searchCities(cities, "zurich", 3)[0].city.name, "Zürich", "plain spelling finds the accented name")
+  assert.strictEqual(Model.findCity(cities, "Sao Paulo").zone, "America/Sao_Paulo")
+  assert.strictEqual(Model.searchCities(cities, "phoe", 3)[0].label, "Phoenix, United States")
+  assert.ok(cities.length > 1000, "the city list has " + cities.length)
+})
+
+check("the people setting edits as a string and round-trips", () => {
+  const raw = Model.parsePeopleRaw("Grandma=Phoenix; Pen pal=Asia/Doha;; junk; =x")
+  assert.deepStrictEqual(raw, [{ name: "Grandma", where: "Phoenix" }, { name: "Pen pal", where: "Asia/Doha" }])
+  const added = Model.addPerson("Grandma=Phoenix", "Nana", "Portland, Maine")
+  assert.strictEqual(added, "Grandma=Phoenix; Nana=Portland, Maine")
+  assert.strictEqual(Model.parsePeopleRaw(added)[1].where, "Portland, Maine")
+  assert.strictEqual(Model.removePerson(added, 0), "Nana=Portland, Maine")
+  assert.strictEqual(Model.removePerson(added, 5), added)
+  assert.strictEqual(Model.addPerson("", "Auntie; Jo", "Sydney"), "Auntie  Jo=Sydney", "separators cannot sneak into a name")
+  assert.strictEqual(Model.peopleString([]), "")
+})
+
 console.log(passed + " checks passed")

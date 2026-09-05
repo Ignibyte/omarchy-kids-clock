@@ -12,7 +12,8 @@ import "Model.js" as Model
 // their own small sky, what they are probably doing, and whether it is a
 // good time to call. Left and right move the sun an hour; 0 comes back to
 // now; Enter opens the set-the-clock game; M swaps in the world map with
-// the night side on the band that reads maps; Escape closes.
+// the night side on the band that reads maps; P opens the People screen
+// where a parent adds and removes the people shown; Escape closes.
 Item {
   id: root
 
@@ -75,6 +76,162 @@ Item {
   readonly property var markers: showMap && clock && home
     ? Model.mapMarkers(home, clock.homeCity ? clock.homeCity.lat : null, clock.homeCity ? clock.homeCity.lon : null, clock.people, rows)
     : []
+
+  // ---- people: the parent's screen. The list is home, everyone stored in
+  // the setting (placed or not), and "Add someone". Adding asks two
+  // questions, a name and a place found by typing; removing asks once.
+  // Everything is saved to the plugin's own entry in shell.json through the
+  // shell, the way the built-in panels save theirs.
+  property bool showPeople: false
+  property string peopleMode: "list"   // list, name, place, remove
+  property int peopleIndex: 1
+  property string placeFor: "person"   // person or home
+  property string draftName: ""
+  property string draftWhere: ""
+  property int matchIndex: 0
+  readonly property int mostPeople: 8
+  readonly property var cities: clock ? clock.cities : []
+  readonly property var storedPeople: clock ? Model.parsePeopleRaw(clock.peopleText) : []
+  readonly property var matches: peopleMode === "place" ? Model.searchCities(cities, draftWhere, 6) : []
+  onMatchesChanged: matchIndex = 0
+  readonly property var peopleEntries: {
+    var out = []
+    var homeSet = clock ? clock.homeCitySetting !== "" : false
+    out.push({ kind: "home", name: "Home", time: home ? home.timeText : "",
+      place: clock ? clock.homeName + (homeSet ? "" : "  ·  from the computer's time zone") : "" })
+    for (var i = 0; i < storedPeople.length; i++) {
+      var entry = storedPeople[i]
+      var city = Model.findCity(cities, entry.where)
+      var place = city ? Model.cityLabel(city, cities)
+        : (entry.where.indexOf("/") !== -1 ? entry.where.split("/").pop().replace(/_/g, " ") : entry.where + "  ·  not found")
+      var time = ""
+      for (var r = 0; r < rows.length; r++) {
+        if (rows[r].name === entry.name && rows[r].ready) { time = rows[r].timeText; break }
+      }
+      out.push({ kind: "person", name: entry.name, place: place, time: time })
+    }
+    var cap = rules ? rules.maxPeople : 3
+    out.push({ kind: "add", time: "",
+      name: storedPeople.length >= mostPeople ? "That is plenty of people" : "Add someone",
+      place: storedPeople.length > cap ? "this face shows the first " + cap : "" })
+    return out
+  }
+  readonly property string editPrompt: peopleMode === "name" ? "What do you call them?"
+    : (placeFor === "home" ? "Where are we?" : "Where does " + draftName + " live?")
+
+  // Save some settings onto the plugin's entry, keeping the rest.
+  function persistSettings(values) {
+    if (!clock) return false
+    var entry = { id: pluginId }
+    var current = clock.config || {}
+    for (var k in current) if (k !== "id") entry[k] = current[k]
+    for (var v in values) entry[v] = values[v]
+    if (shell && typeof shell.updateEntryInline === "function") return shell.updateEntryInline(pluginId, entry)
+    console.warn("kids-clock: the shell cannot save settings here")
+    return false
+  }
+
+  function openPeople() {
+    if (playing) return
+    showMap = false
+    peopleMode = "list"
+    peopleIndex = storedPeople.length > 0 ? 1 : 0
+    showPeople = true
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function closePeople() {
+    showPeople = false
+    peopleMode = "list"
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function focusEditField() {
+    Qt.callLater(function() { editField.forceActiveFocus(); editField.cursorPosition = editField.text.length })
+  }
+
+  function beginAdd() {
+    if (storedPeople.length >= mostPeople) return
+    placeFor = "person"
+    draftName = ""
+    draftWhere = ""
+    peopleMode = "name"
+    focusEditField()
+  }
+
+  function acceptName() {
+    if (draftName.replace(/^\s+|\s+$/g, "") === "") return
+    draftName = draftName.replace(/^\s+|\s+$/g, "")
+    draftWhere = ""
+    peopleMode = "place"
+    focusEditField()
+  }
+
+  function beginHome() {
+    placeFor = "home"
+    draftWhere = ""
+    peopleMode = "place"
+    focusEditField()
+  }
+
+  function backToList() {
+    peopleMode = "list"
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function editBack() {
+    if (peopleMode === "place" && placeFor === "person") { peopleMode = "name"; focusEditField() }
+    else backToList()
+  }
+
+  function savePlace(whereKey) {
+    if (placeFor === "home") persistSettings({ homeCity: whereKey })
+    else persistSettings({ people: Model.addPerson(clock.peopleText, draftName, whereKey) })
+    backToList()
+    Qt.callLater(function() { peopleIndex = placeFor === "home" ? 0 : Math.max(1, storedPeople.length) })
+  }
+
+  function pickMatch(index) {
+    var match = matches[index]
+    if (match) savePlace(match.key)
+  }
+
+  function editAccept() {
+    if (peopleMode === "name") { acceptName(); return }
+    if (matches.length > 0) pickMatch(matchIndex)
+    else if (draftWhere.indexOf("/") !== -1) savePlace(draftWhere.replace(/^\s+|\s+$/g, ""))
+  }
+
+  // Straight from a name and a place, for a script or a test.
+  function addPerson(name, where) {
+    return persistSettings({ people: Model.addPerson(clock.peopleText, name, where) })
+  }
+
+  function activateRow(index) {
+    peopleIndex = index
+    if (index === 0) beginHome()
+    else if (index === peopleEntries.length - 1) beginAdd()
+  }
+
+  function askRemove() {
+    if (peopleIndex === 0) {
+      if (clock && clock.homeCitySetting !== "") persistSettings({ homeCity: "" })
+    } else if (peopleIndex >= 1 && peopleIndex <= storedPeople.length) {
+      peopleMode = "remove"
+    }
+  }
+
+  function askRemoveAt(index) {
+    peopleIndex = index
+    askRemove()
+  }
+
+  function confirmRemove() {
+    if (peopleMode !== "remove") return
+    persistSettings({ people: Model.removePerson(clock.peopleText, peopleIndex - 1) })
+    peopleMode = "list"
+    Qt.callLater(function() { peopleIndex = Math.min(peopleIndex, Math.max(0, storedPeople.length)) })
+  }
 
   // ---- the set-the-clock game. One person at a time: their time is frozen
   // when the round starts, the hands begin at twelve, and the sun under the
@@ -144,8 +301,9 @@ Item {
     try { payload = JSON.parse(payloadJson || "{}") } catch (e) { payload = null }
     var view = payload && payload.view ? String(payload.view) : ""
     if (view === "map") root.showMap = root.hasMap
-    else if (view === "clock") root.showMap = false
+    else if (view === "clock") { root.showMap = false; root.showPeople = false }
     else if (view === "game") root.startGame()
+    else if (view === "people") root.openPeople()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -157,6 +315,8 @@ Item {
     root.opened = false
     root.stopGame()
     root.showMap = false
+    root.showPeople = false
+    root.peopleMode = "list"
     if (root.clock) root.clock.resetScrub()
     if (root.shell && typeof root.shell.hide === "function") root.shell.hide(root.pluginId)
   }
@@ -682,6 +842,25 @@ Item {
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: function(event) {
           var shift = (event.modifiers & Qt.ShiftModifier) !== 0
+          if (root.showPeople) {
+            if (event.key === Qt.Key_Escape) {
+              if (root.peopleMode === "remove") root.peopleMode = "list"
+              else root.closePeople()
+            } else if (event.key === Qt.Key_P && root.peopleMode === "list") {
+              root.closePeople()
+            } else if (event.key === Qt.Key_Down && root.peopleMode === "list") {
+              root.peopleIndex = Math.min(root.peopleEntries.length - 1, root.peopleIndex + 1)
+            } else if (event.key === Qt.Key_Up && root.peopleMode === "list") {
+              root.peopleIndex = Math.max(0, root.peopleIndex - 1)
+            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+              if (root.peopleMode === "remove") root.confirmRemove()
+              else root.activateRow(root.peopleIndex)
+            } else if ((event.key === Qt.Key_Delete || event.key === Qt.Key_Backspace) && root.peopleMode === "list") {
+              root.askRemove()
+            }
+            event.accepted = true
+            return
+          }
           if (event.key === Qt.Key_Escape) {
             if (root.playing) root.stopGame()
             else if (root.scrubbing && root.clock) root.clock.resetScrub()
@@ -690,6 +869,9 @@ Item {
             event.accepted = true
           } else if (event.key === Qt.Key_M) {
             if (root.hasMap && !root.playing) root.showMap = !root.showMap
+            event.accepted = true
+          } else if (event.key === Qt.Key_P) {
+            if (!root.playing) root.openPeople()
             event.accepted = true
           } else if (event.key === Qt.Key_Right || event.key === Qt.Key_Left) {
             var sign = event.key === Qt.Key_Right ? 1 : -1
@@ -734,7 +916,7 @@ Item {
         // ---- the clock
         Item {
           id: clockView
-          visible: !root.playing && !root.showMap
+          visible: !root.playing && !root.showMap && !root.showPeople
           anchors.fill: parent
           anchors.bottomMargin: hint.height + content.gap
 
@@ -897,7 +1079,7 @@ Item {
         // the shading means.
         Item {
           id: mapView
-          visible: !root.playing && root.showMap
+          visible: !root.playing && root.showMap && !root.showPeople
           anchors.fill: parent
           anchors.bottomMargin: hint.height + content.gap
 
@@ -932,6 +1114,340 @@ Item {
             font.family: root.fontFamily
             font.pixelSize: Style.font.body
             wrapMode: Text.WordWrap
+          }
+        }
+
+        // ---- people: the list, or the two questions of the add flow.
+        Item {
+          id: peopleView
+          visible: !root.playing && root.showPeople
+          anchors.fill: parent
+          anchors.bottomMargin: hint.height + content.gap
+
+          Text {
+            id: peopleTitle
+            width: parent.width
+            textFormat: Text.PlainText
+            text: "People"
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.displayLarge
+            font.bold: true
+          }
+
+          Text {
+            id: peopleSubtitle
+            anchors.top: peopleTitle.bottom
+            anchors.topMargin: Style.spacing.xs
+            width: parent.width
+            textFormat: Text.PlainText
+            text: "Who the clock shows, and where they live. The names stay on this computer."
+            color: root.quiet
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.title
+            wrapMode: Text.WordWrap
+          }
+
+          Column {
+            id: peopleList
+            visible: root.peopleMode === "list" || root.peopleMode === "remove"
+            anchors.top: peopleSubtitle.bottom
+            anchors.topMargin: content.gap * 2
+            width: parent.width
+            spacing: Style.spacing.sm
+
+            Repeater {
+              model: root.peopleEntries
+
+              Rectangle {
+                id: personRow
+                required property var modelData
+                required property int index
+                readonly property bool selected: root.peopleIndex === index
+                readonly property bool confirming: selected && root.peopleMode === "remove"
+                readonly property bool isPerson: modelData.kind === "person"
+                width: peopleList.width
+                height: Style.space(46)
+                radius: root.cornerRadius
+                color: Util.alpha(root.foreground, selected ? 0.10 : 0.04)
+                border.width: Math.max(1, Style.space(1))
+                border.color: selected ? Util.alpha(root.sunColor, 0.8) : Util.alpha(root.foreground, 0.10)
+                Behavior on color { ColorAnimation { duration: 120 } }
+
+                MouseArea {
+                  anchors.fill: parent
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.activateRow(personRow.index)
+                }
+
+                Item {
+                  id: rowMarker
+                  anchors.left: parent.left
+                  anchors.leftMargin: Style.spacing.xl
+                  anchors.verticalCenter: parent.verticalCenter
+                  width: Style.space(18)
+                  height: width
+
+                  Rectangle {
+                    anchors.centerIn: parent
+                    visible: personRow.modelData.kind !== "add"
+                    width: Style.space(personRow.modelData.kind === "home" ? 16 : 12)
+                    height: width
+                    radius: width / 2
+                    color: personRow.modelData.kind === "home" ? "transparent" : root.sunColor
+                    border.width: personRow.modelData.kind === "home" ? Math.max(2, Style.space(3)) : 0
+                    border.color: root.foreground
+                  }
+                  Text {
+                    anchors.centerIn: parent
+                    visible: personRow.modelData.kind === "add"
+                    textFormat: Text.PlainText
+                    text: "+"
+                    color: root.sunColor
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.display
+                    font.bold: true
+                  }
+                }
+
+                Row {
+                  id: rowWords
+                  anchors.left: rowMarker.right
+                  anchors.leftMargin: Style.spacing.xl
+                  anchors.right: rowRight.left
+                  anchors.rightMargin: Style.spacing.lg
+                  anchors.verticalCenter: parent.verticalCenter
+                  spacing: Style.spacing.lg
+
+                  Text {
+                    id: rowName
+                    textFormat: Text.PlainText
+                    text: personRow.confirming ? "Remove " + personRow.modelData.name + "?" : personRow.modelData.name
+                    color: personRow.confirming ? root.sunColor : root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.heading
+                    font.bold: true
+                  }
+                  Text {
+                    width: Math.max(0, rowWords.width - rowName.width - rowWords.spacing)
+                    textFormat: Text.PlainText
+                    text: personRow.confirming ? "Enter  yes     Esc  no" : personRow.modelData.place
+                    color: personRow.confirming ? root.foreground : root.quiet
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.title
+                    elide: Text.ElideRight
+                  }
+                }
+
+                Row {
+                  id: rowRight
+                  anchors.right: parent.right
+                  anchors.rightMargin: Style.spacing.xl
+                  anchors.verticalCenter: parent.verticalCenter
+                  spacing: Style.spacing.xxl
+
+                  Text {
+                    visible: text !== "" && !personRow.confirming
+                    textFormat: Text.PlainText
+                    text: personRow.modelData.time
+                    color: root.quiet
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.title
+                  }
+                  Text {
+                    visible: personRow.isPerson && !personRow.confirming
+                    textFormat: Text.PlainText
+                    text: "remove"
+                    color: removeHover.containsMouse ? root.sunColor : Util.alpha(root.foreground, 0.45)
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.subtitle
+                    font.underline: removeHover.containsMouse
+                    MouseArea {
+                      id: removeHover
+                      anchors.fill: parent
+                      anchors.margins: -Style.spacing.sm
+                      hoverEnabled: true
+                      cursorShape: Qt.PointingHandCursor
+                      onClicked: root.askRemoveAt(personRow.index)
+                    }
+                  }
+                  Text {
+                    visible: personRow.confirming
+                    textFormat: Text.PlainText
+                    text: "yes"
+                    color: root.sunColor
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.heading
+                    font.bold: true
+                    MouseArea { anchors.fill: parent; anchors.margins: -Style.spacing.sm; cursorShape: Qt.PointingHandCursor; onClicked: root.confirmRemove() }
+                  }
+                  Text {
+                    visible: personRow.confirming
+                    textFormat: Text.PlainText
+                    text: "no"
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.heading
+                    MouseArea { anchors.fill: parent; anchors.margins: -Style.spacing.sm; cursorShape: Qt.PointingHandCursor; onClicked: root.peopleMode = "list" }
+                  }
+                }
+              }
+            }
+          }
+
+          Column {
+            id: editPane
+            visible: root.peopleMode === "name" || root.peopleMode === "place"
+            anchors.top: peopleSubtitle.bottom
+            anchors.topMargin: content.gap * 3
+            width: parent.width
+            spacing: Style.spacing.lg
+
+            Text {
+              width: parent.width
+              textFormat: Text.PlainText
+              text: root.editPrompt
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.display
+              wrapMode: Text.WordWrap
+            }
+
+            Rectangle {
+              width: Math.min(parent.width, Style.space(560))
+              height: Style.space(56)
+              radius: root.cornerRadius
+              color: Util.alpha(root.foreground, 0.06)
+              border.width: Math.max(1, Style.space(2))
+              border.color: root.sunColor
+
+              TextInput {
+                id: editField
+                anchors.fill: parent
+                anchors.leftMargin: Style.spacing.xl
+                anchors.rightMargin: Style.spacing.xl
+                verticalAlignment: TextInput.AlignVCenter
+                color: root.foreground
+                selectionColor: Util.alpha(root.sunColor, 0.5)
+                selectedTextColor: root.foreground
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.displayLarge
+                selectByMouse: true
+                clip: true
+                text: root.peopleMode === "name" ? root.draftName : root.draftWhere
+                onTextEdited: {
+                  if (root.peopleMode === "name") root.draftName = text
+                  else root.draftWhere = text
+                }
+                Keys.onPressed: function(event) {
+                  if (event.key === Qt.Key_Escape) {
+                    root.editBack()
+                    event.accepted = true
+                  } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                    root.editAccept()
+                    event.accepted = true
+                  } else if (root.peopleMode === "place" && event.key === Qt.Key_Down) {
+                    root.matchIndex = Math.min(Math.max(0, root.matches.length - 1), root.matchIndex + 1)
+                    event.accepted = true
+                  } else if (root.peopleMode === "place" && event.key === Qt.Key_Up) {
+                    root.matchIndex = Math.max(0, root.matchIndex - 1)
+                    event.accepted = true
+                  }
+                }
+              }
+
+              Text {
+                anchors.fill: editField
+                verticalAlignment: Text.AlignVCenter
+                visible: editField.text === ""
+                textFormat: Text.PlainText
+                text: root.peopleMode === "name" ? "Grandma, Nana, Uncle Ken..." : "a town or a city"
+                color: Util.alpha(root.foreground, 0.35)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.displayLarge
+              }
+            }
+
+            Text {
+              width: parent.width
+              textFormat: Text.PlainText
+              text: root.peopleMode === "name"
+                ? "The name the child uses. Enter when it is right."
+                : "Type a few letters and pick the place. If it is not here, try the nearest big city, or a time zone such as America/Phoenix."
+              color: root.quiet
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              wrapMode: Text.WordWrap
+            }
+
+            Column {
+              width: Math.min(parent.width, Style.space(560))
+              spacing: Style.spacing.xs
+              visible: root.peopleMode === "place"
+
+              Repeater {
+                model: root.matches
+
+                Rectangle {
+                  id: matchRow
+                  required property var modelData
+                  required property int index
+                  readonly property bool selected: root.matchIndex === index
+                  width: parent.width
+                  height: Style.space(40)
+                  radius: root.cornerRadius
+                  color: Util.alpha(root.foreground, selected ? 0.12 : 0.04)
+                  border.width: Math.max(1, Style.space(1))
+                  border.color: selected ? Util.alpha(root.sunColor, 0.8) : Util.alpha(root.foreground, 0.10)
+
+                  MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    hoverEnabled: true
+                    onEntered: root.matchIndex = matchRow.index
+                    onClicked: root.pickMatch(matchRow.index)
+                  }
+
+                  Text {
+                    anchors.left: parent.left
+                    anchors.leftMargin: Style.spacing.xl
+                    anchors.right: matchZone.left
+                    anchors.rightMargin: Style.spacing.lg
+                    anchors.verticalCenter: parent.verticalCenter
+                    textFormat: Text.PlainText
+                    text: matchRow.modelData.label
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.heading
+                    font.bold: matchRow.selected
+                    elide: Text.ElideRight
+                  }
+                  Text {
+                    id: matchZone
+                    anchors.right: parent.right
+                    anchors.rightMargin: Style.spacing.xl
+                    anchors.verticalCenter: parent.verticalCenter
+                    textFormat: Text.PlainText
+                    text: matchRow.modelData.city.zone
+                    color: root.quiet
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                }
+              }
+
+              Text {
+                visible: root.peopleMode === "place" && root.draftWhere.length >= 2 && root.matches.length === 0
+                width: parent.width
+                textFormat: Text.PlainText
+                text: root.draftWhere.indexOf("/") !== -1
+                  ? "Enter keeps it as a time zone."
+                  : "Nothing called that here yet."
+                color: root.quiet
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.title
+              }
+            }
           }
         }
 
@@ -1049,13 +1565,17 @@ Item {
           textFormat: Text.PlainText
           text: root.playing
             ? "←  →  five minutes     ↑  ↓  an hour     Enter  next     Esc  back to the clock"
-            : (root.showMap
-              ? "←  →  move the sun     M  the clock     0  now     Esc  close"
-              : (root.hasMap
-                ? "←  →  move the sun     Enter  set the clock     M  the map     0  now     Esc  close"
-                : (root.hasFace
-                  ? "←  →  move the sun     Enter  set the clock     0  now     Esc  close"
-                  : "←  →  move the sun     0  now     Esc  close")))
+            : (root.showPeople
+              ? (root.peopleMode === "list" || root.peopleMode === "remove"
+                ? "↑  ↓  choose     Enter  open     Delete  remove     Esc  back to the clock"
+                : (root.peopleMode === "name" ? "Enter  next     Esc  back" : "↑  ↓  choose a place     Enter  save     Esc  back"))
+              : (root.showMap
+                ? "←  →  move the sun     M  the clock     P  people     0  now     Esc  close"
+                : (root.hasMap
+                  ? "←  →  move the sun     Enter  set the clock     M  the map     P  people     0  now     Esc  close"
+                  : (root.hasFace
+                    ? "←  →  move the sun     Enter  set the clock     P  people     0  now     Esc  close"
+                    : "←  →  move the sun     P  people     0  now     Esc  close"))))
           color: Util.alpha(root.foreground, 0.4)
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption

@@ -51,7 +51,10 @@ whole lesson.
 ![The map on the Navigator face](preview-map.png)
 
 The land outlines are Natural Earth 1:110m, which is public domain, rounded
-to a tenth of a degree in `data/land.json`.
+to a tenth of a degree in `data/land.json`. The places in `data/cities.json`
+are Natural Earth's populated places, also public domain: every place over
+300,000 people, every capital, plus a few carried over from the first list,
+each with its time zone.
 
 ## Install
 
@@ -62,26 +65,45 @@ omarchy plugin enable ignibyte.kids-clock right
 
 The plugin lands disabled so you can read the code first. Omarchy plugins run
 unsandboxed inside `omarchy-shell` with your permissions. This one runs
-`date` and `timedatectl` and reads its own `data/cities.json`. It makes no
+`date` and `timedatectl` and reads its own `data/` files. It makes no
 network requests and writes nothing outside `~/.config/omarchy/shell.json`,
 where Omarchy keeps every plugin's settings.
 
+## Adding people
+
+Press P in the big clock. The People screen lists home and everyone the
+clock shows, with where they live and their time. "Add someone" asks two
+questions: what the child calls them, and where they live. Type a few
+letters of the town or city and pick it from the matches; about 1,500
+places are built in, and a name shared by several places, such as Portland,
+is stored with its region so it comes back as itself. A place that is not
+in the list can be given as a time zone, such as `America/Phoenix`. Each
+person has a remove link that asks once. The Home row picks the home city
+when the computer's time zone is a region rather than your town, so the
+sunrise is right.
+
+![The People screen asking where Nana lives](preview-people.png)
+
+Everything is saved to the plugin's own entry in `~/.config/omarchy/shell.json`
+through the shell, the same way the built-in panels save their settings, so
+the command line sees the same values.
+
 ## Settings
 
-Omarchy 4.0.2 has no settings screen for plugins yet, so the settings are
-edited on the command line or in the plugin's entry in
-`~/.config/omarchy/shell.json`:
+Omarchy 4.0.2 has no settings screen for plugins yet. Apart from the People
+screen, the settings are edited on the command line or in the plugin's entry
+in `~/.config/omarchy/shell.json`:
 
 ```bash
-omarchy-shell shell setBarWidget ignibyte.kids-clock people '"Grandma=Phoenix; Nana=Sydney"'
 omarchy-shell shell setBarWidget ignibyte.kids-clock band '"tinkerer"'
+omarchy-shell shell setBarWidget ignibyte.kids-clock people '"Grandma=Phoenix; Nana=Sydney"'
 ```
 
 | Key | Default | Meaning |
 |---|---|---|
 | `band` | `explorer` | `explorer`, `tinkerer` or `navigator` |
-| `people` | `Grandma=Phoenix; Cousin Mia=Berlin; Uncle Ken=Tokyo` | `Name=City` pairs separated by semicolons. Cities from the built-in list of about a hundred, or any IANA zone such as `America/Phoenix` |
-| `homeCity` | blank | The city that matches the system time zone. Set it when the system zone is a region, not your city, so the sunrise is right |
+| `people` | `Grandma=Phoenix; Cousin Mia=Berlin; Uncle Ken=Tokyo` | `Name=City` pairs separated by semicolons, which the People screen edits. Cities from the built-in list of about 1,500, `City, Region` when the name is shared, or any IANA zone such as `America/Phoenix`. An empty value shows nobody; a missing key shows these three examples |
+| `homeCity` | blank | The city that matches the system time zone. Set it, or pick it on the People screen, when the system zone is a region rather than your town, so the sunrise is right |
 | `wakeTime`, `schoolStart`, `schoolEnd`, `dinnerTime`, `bedTime` | `07:00`, `08:30`, `15:00`, `18:00`, `20:00` | The family routine. "Uncle Ken is probably at school" means the child's own routine moved to Tokyo, which is honest and personal rather than a guess about another country |
 | `hourFormat` | `12` | `12` or `24`, for the bands that show digits |
 
@@ -100,13 +122,15 @@ opens the big clock. Right click puts the sun back to now after a scrub.
 | 0, Home, Space | back to now |
 | Enter | open the set-the-clock game (tinkerer and navigator); clicking the face does the same |
 | M | the map, and back to the clock (navigator) |
-| Escape | back to now if the sun was moved, back to the clock from the map, otherwise close |
+| P | the People screen, where a parent adds and removes people |
+| Escape | back to now if the sun was moved, back to the clock from the map or the People screen, otherwise close |
 
 A view can be opened directly, which suits a keybinding:
 
 ```bash
 omarchy-shell shell toggle ignibyte.kids-clock '{"view":"map"}'
 omarchy-shell shell toggle ignibyte.kids-clock '{"view":"game"}'
+omarchy-shell shell toggle ignibyte.kids-clock '{"view":"people"}'
 ```
 
 ## The set-the-clock game
