@@ -11,11 +11,13 @@ import "Model.js" as Model
 // the digits on the bands that read them, then a card for each person with
 // their own small sky, what they are probably doing, and whether it is a
 // good time to call. A row of buttons along the bottom does everything:
-// Earlier and Later move the sun an hour, Back to now undoes that, Set the
-// clock opens the game, The map swaps in the world with its night side on
-// the band that reads maps, People opens the screen where a parent adds and
-// removes the people shown, and Close closes. The keys do the same for
-// anyone at a keyboard: arrows, 0, Enter, M, P and Escape.
+// Earlier and Later move the sun an hour, Back to now undoes that, Play
+// opens the game, Map swaps in the world with its night side on the band
+// that reads maps, Globe shows a globe to turn with well-known places to
+// tap for the time there, People opens the screen where a parent adds and
+// removes the people shown, Theme picks one of the computer's themes, and
+// Close closes. The keys do the same for anyone at a keyboard: arrows, 0,
+// Enter, M, G, P, T and Escape.
 Item {
   id: root
 
@@ -31,6 +33,9 @@ Item {
     : (shell && typeof shell.serviceFor === "function" ? shell.serviceFor(pluginId) : null)
 
   property bool opened: false
+  // The big clock takes the keyboard while it is up. A harness, or a kiosk
+  // that drives it by pointer alone, can switch that off before opening it.
+  property bool takesKeyboard: true
 
   property color background: Color.menu.background
   property color foreground: Color.menu.text
@@ -84,6 +89,107 @@ Item {
   // questions, a name and a place found by typing; removing asks once.
   // Everything is saved to the plugin's own entry in shell.json through the
   // shell, the way the built-in panels save theirs.
+  // ---- the globe: where it is turned to, and the tapped place.
+  property bool showGlobe: false
+  property real globeLat: 25
+  property real globeLon: -90
+  Behavior on globeLon { enabled: !root.globeDragging; NumberAnimation { duration: 500; easing.type: Easing.OutCubic } }
+  Behavior on globeLat { enabled: !root.globeDragging; NumberAnimation { duration: 500; easing.type: Easing.OutCubic } }
+  property bool globeDragging: false
+  property int pickedSpot: -1
+  property bool globeAtHome: false
+  readonly property var globeDots: clock ? clock.globeDots : []
+  readonly property var popular: Model.popularSpots(cities)
+  readonly property var spots: clock ? Model.globeSpotList(clock.homeName, clock.homeCity, clock.people, popular) : []
+  readonly property var picked: pickedSpot >= 0 && pickedSpot < spots.length ? spots[pickedSpot] : null
+  readonly property var pickedOffset: !picked || !clock ? null
+    : (picked.kind === "home" ? { offsetSeconds: clock.homeOffsetSeconds } : (clock.offsets ? clock.offsets[picked.zone] : null))
+  readonly property var pickedView: picked && clock
+    ? Model.spotView(picked, pickedOffset, shownMs, home, clock.routine, rules, clock.hourFormat)
+    : null
+
+  // Opened before the city list or the home zone has loaded, the globe has
+  // no home to centre on; when home turns up it goes there and picks it.
+  onSpotsChanged: {
+    if (!showGlobe || globeAtHome || spots.length === 0 || spots[0].kind !== "home") return
+    globeDragging = true
+    centreGlobeOnHome()
+    globeDragging = false
+    pickedSpot = 0
+    if (clock && typeof clock.requestZones === "function") clock.requestZones(spotZones())
+  }
+
+  function spotZones() {
+    var zones = []
+    for (var i = 0; i < spots.length; i++) zones.push(spots[i].zone)
+    return zones
+  }
+
+  function centreGlobeOnHome() {
+    var homeCity = clock ? clock.homeCity : null
+    globeLat = homeCity ? Math.max(-45, Math.min(45, homeCity.lat)) : 25
+    globeLon = homeCity ? homeCity.lon : -90
+    globeAtHome = !!homeCity
+  }
+
+  function openGlobe() {
+    if (playing) return
+    showMap = false
+    showPeople = false
+    showTheme = false
+    globeDragging = true
+    centreGlobeOnHome()
+    globeDragging = false
+    pickedSpot = spots.length > 0 ? 0 : -1
+    showGlobe = true
+    if (clock && typeof clock.requestZones === "function") clock.requestZones(spotZones())
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function closeGlobe() {
+    showGlobe = false
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function spinGlobe(deltaDegrees) { globeLon = globeLon + deltaDegrees }
+
+  function pickSpot(index) { pickedSpot = index }
+
+  function pickSpotNamed(name) {
+    for (var i = 0; i < spots.length; i++) {
+      if (spots[i].place === name || spots[i].name === name) { pickedSpot = i; return true }
+    }
+    return false
+  }
+
+  // ---- the theme screen: the computer's themes, and the one being chosen.
+  property bool showTheme: false
+  property string themePending: ""
+  readonly property var themes: clock ? clock.themes : []
+  readonly property string themeSlug: clock ? clock.themeSlug : ""
+  readonly property bool themeChanging: themePending !== "" && themePending !== themeSlug
+
+  function openTheme() {
+    if (playing) return
+    showMap = false
+    showGlobe = false
+    showPeople = false
+    themePending = ""
+    showTheme = true
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function closeTheme() {
+    showTheme = false
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function chooseTheme(slug) {
+    if (!clock || typeof clock.applyTheme !== "function") return false
+    if (clock.applyTheme(slug)) { themePending = slug; return true }
+    return false
+  }
+
   property bool showPeople: false
   property string peopleMode: "list"   // list, name, place, remove
   property int peopleIndex: 1
@@ -136,6 +242,8 @@ Item {
   function openPeople() {
     if (playing) return
     showMap = false
+    showGlobe = false
+    showTheme = false
     peopleMode = "list"
     peopleIndex = storedPeople.length > 0 ? 1 : 0
     showPeople = true
@@ -306,6 +414,8 @@ Item {
     else if (view === "clock") { root.showMap = false; root.showPeople = false }
     else if (view === "game") root.startGame()
     else if (view === "people") root.openPeople()
+    else if (view === "globe") root.openGlobe()
+    else if (view === "theme") root.openTheme()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -318,6 +428,8 @@ Item {
     root.stopGame()
     root.showMap = false
     root.showPeople = false
+    root.showGlobe = false
+    root.showTheme = false
     root.peopleMode = "list"
     if (root.clock) root.clock.resetScrub()
     if (root.shell && typeof root.shell.hide === "function") root.shell.hide(root.pluginId)
@@ -763,6 +875,7 @@ Item {
     property string glyph: "›"
     property string caption: ""
     property int delta: 5
+    property bool spins: false
     spacing: Style.spacing.xs
 
     Rectangle {
@@ -790,7 +903,7 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: root.turn(turnButton.delta)
+        onClicked: turnButton.spins ? root.spinGlobe(turnButton.delta) : root.turn(turnButton.delta)
       }
     }
 
@@ -801,6 +914,174 @@ Item {
       color: root.quiet
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
+    }
+  }
+
+  // The globe: an orthographic view drawn as dots, the night shaded, the sun
+  // where it is overhead, and a marker for home, each person and the popular
+  // places. Dragging turns it; tapping a marker picks that place.
+  component Globe: Item {
+    id: globe
+    property real lat0: 0
+    property real lon0: 0
+    property var dots: []
+    property var spots: []
+    property int picked: -1
+    signal spotPicked(int index)
+    signal turned(real dLat, real dLon)
+    signal dragChanged(bool dragging)
+    readonly property real r: Math.min(width, height) / 2 - Style.space(8)
+    readonly property real cx: width / 2
+    readonly property real cy: height / 2
+    readonly property string dotsPath: Model.globeDotsPath(dots, lat0, lon0, r, cx, cy, Math.max(2, r * 0.017))
+    readonly property string nightPath: Model.globeNightPath(root.shownMs, lat0, lon0, r, cx, cy, 48)
+    readonly property var markers: Model.globeMarkers(spots, lat0, lon0, r, cx, cy)
+    readonly property var sunSpot: {
+      var sun = Model.subsolarPoint(root.shownMs)
+      return Model.globeProject(sun.lat, sun.lon, Model.globeBasis(lat0, lon0), r, cx, cy)
+    }
+
+    Rectangle {
+      x: globe.cx - globe.r
+      y: globe.cy - globe.r
+      width: globe.r * 2
+      height: width
+      radius: width / 2
+      color: root.daySky
+      border.width: Math.max(1, Style.space(1))
+      border.color: Util.alpha(root.foreground, 0.2)
+    }
+
+    Shape {
+      anchors.fill: parent
+      antialiasing: true
+      layer.enabled: true
+      layer.samples: 4
+      ShapePath {
+        fillColor: root.landColor
+        strokeWidth: 0
+        strokeColor: "transparent"
+        PathSvg { path: globe.dotsPath }
+      }
+    }
+
+    Shape {
+      anchors.fill: parent
+      antialiasing: true
+      layer.enabled: true
+      layer.samples: 4
+      ShapePath {
+        fillColor: root.nightShade
+        strokeWidth: 0
+        strokeColor: "transparent"
+        PathSvg { path: globe.nightPath }
+      }
+    }
+
+    Rectangle {
+      visible: globe.sunSpot.depth > 0
+      width: Style.space(26 + 14 * Math.max(0, globe.sunSpot.depth))
+      height: width
+      radius: width / 2
+      color: Util.alpha(root.sunColor, 0.25)
+      x: globe.sunSpot.x - width / 2
+      y: globe.sunSpot.y - height / 2
+    }
+
+    Rectangle {
+      visible: globe.sunSpot.depth > 0
+      width: Style.space(12 + 8 * Math.max(0, globe.sunSpot.depth))
+      height: width
+      radius: width / 2
+      color: root.sunColor
+      x: globe.sunSpot.x - width / 2
+      y: globe.sunSpot.y - height / 2
+    }
+
+    MouseArea {
+      id: dragArea
+      anchors.fill: parent
+      cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+      property real lastX: 0
+      property real lastY: 0
+      onPressed: function(mouse) { lastX = mouse.x; lastY = mouse.y }
+      onPressedChanged: globe.dragChanged(pressed)
+      onPositionChanged: function(mouse) {
+        if (!pressed) return
+        var perPixel = 60 / Math.max(1, globe.r)
+        globe.turned((mouse.y - lastY) * perPixel, -(mouse.x - lastX) * perPixel)
+        lastX = mouse.x
+        lastY = mouse.y
+      }
+    }
+
+    Repeater {
+      model: globe.markers
+
+      Item {
+        id: marker
+        required property var modelData
+        readonly property var spot: modelData.spot
+        readonly property bool isPicked: globe.picked === modelData.index
+        readonly property bool named: spot.kind !== "spot"
+        readonly property real dotSize: Style.space((spot.kind === "spot" ? 9 : 12) + 5 * modelData.depth + (isPicked ? 4 : 0))
+        readonly property bool flip: modelData.x > globe.width * 0.62
+        x: modelData.x
+        y: modelData.y
+
+        Rectangle {
+          visible: marker.isPicked
+          width: marker.dotSize + Style.space(12)
+          height: width
+          radius: width / 2
+          x: -width / 2
+          y: -height / 2
+          color: "transparent"
+          border.width: Math.max(2, Style.space(2))
+          border.color: root.sunColor
+        }
+
+        Rectangle {
+          width: marker.dotSize
+          height: width
+          radius: width / 2
+          x: -width / 2
+          y: -height / 2
+          color: marker.spot.kind === "home" ? "transparent" : (marker.spot.kind === "person" ? root.sunColor : Util.alpha(root.foreground, 0.85))
+          border.width: marker.spot.kind === "home" ? Math.max(2, Style.space(3)) : 0
+          border.color: root.foreground
+        }
+
+        MouseArea {
+          id: markerArea
+          anchors.centerIn: parent
+          width: Math.max(marker.dotSize, Style.space(28))
+          height: width
+          hoverEnabled: true
+          cursorShape: Qt.PointingHandCursor
+          onClicked: globe.spotPicked(marker.modelData.index)
+        }
+
+        Rectangle {
+          visible: marker.named || marker.isPicked || markerArea.containsMouse
+          x: marker.flip ? -width - Style.space(10) : Style.space(10)
+          y: -height / 2
+          width: markerLabel.implicitWidth + Style.space(12)
+          height: markerLabel.implicitHeight + Style.space(6)
+          radius: Math.max(2, root.cornerRadius / 2)
+          color: Util.alpha(root.background, 0.78)
+          Text {
+            id: markerLabel
+            anchors.centerIn: parent
+            textFormat: Text.PlainText
+            text: marker.spot.kind === "person" ? marker.spot.name : marker.spot.place
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.subtitle
+            font.bold: marker.named || marker.isPicked
+          }
+        }
+      }
     }
   }
 
@@ -828,7 +1109,7 @@ Item {
     color: "transparent"
     WlrLayershell.namespace: "kids-clock"
     WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+    WlrLayershell.keyboardFocus: root.takesKeyboard ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
     exclusionMode: ExclusionMode.Ignore
 
     Rectangle {
@@ -883,11 +1164,19 @@ Item {
           if (event.key === Qt.Key_Escape) {
             if (root.playing) root.stopGame()
             else if (root.scrubbing && root.clock) root.clock.resetScrub()
+            else if (root.showTheme) root.closeTheme()
+            else if (root.showGlobe) root.closeGlobe()
             else if (root.showMap) root.showMap = false
             else root.dismiss()
             event.accepted = true
           } else if (event.key === Qt.Key_M) {
-            if (root.hasMap && !root.playing) root.showMap = !root.showMap
+            if (root.hasMap && !root.playing) { root.showGlobe = false; root.showTheme = false; root.showMap = !root.showMap }
+            event.accepted = true
+          } else if (event.key === Qt.Key_G) {
+            if (!root.playing) { if (root.showGlobe) root.closeGlobe(); else root.openGlobe() }
+            event.accepted = true
+          } else if (event.key === Qt.Key_T) {
+            if (!root.playing) { if (root.showTheme) root.closeTheme(); else root.openTheme() }
             event.accepted = true
           } else if (event.key === Qt.Key_P) {
             if (!root.playing) root.openPeople()
@@ -930,12 +1219,12 @@ Item {
         anchors.leftMargin: card.contentLeftInset
 
         readonly property int gap: Style.spacing.lg
-        readonly property int homeSkyHeight: Math.round(root.cardHeight * (root.hasFace ? 0.30 : 0.26))
+        readonly property int homeSkyHeight: Math.round(root.cardHeight * (root.hasFace ? 0.27 : 0.25))
 
         // ---- the clock
         Item {
           id: clockView
-          visible: !root.playing && !root.showMap && !root.showPeople
+          visible: !root.playing && !root.showMap && !root.showPeople && !root.showGlobe && !root.showTheme
           anchors.fill: parent
           anchors.bottomMargin: toolbar.height + content.gap
 
@@ -1050,7 +1339,7 @@ Item {
 
                   Sky {
                     width: parent.width
-                    height: Math.max(Style.space(80), Math.round(peopleRow.height * 0.34))
+                    height: Math.max(Style.space(72), Math.round(peopleRow.height * 0.30))
                     isDay: modelData.isDay
                     t: modelData.t
                     bodySize: Style.space(30)
@@ -1098,7 +1387,7 @@ Item {
         // the shading means.
         Item {
           id: mapView
-          visible: !root.playing && root.showMap && !root.showPeople
+          visible: !root.playing && root.showMap && !root.showPeople && !root.showGlobe && !root.showTheme
           anchors.fill: parent
           anchors.bottomMargin: toolbar.height + content.gap
 
@@ -1458,6 +1747,232 @@ Item {
           }
         }
 
+        // ---- the globe: the sphere on the left with two buttons to turn it,
+        // and on the right what the tapped place says.
+        Item {
+          id: globeView
+          visible: !root.playing && root.showGlobe && !root.showPeople && !root.showTheme
+          anchors.fill: parent
+          anchors.bottomMargin: toolbar.height + content.gap
+          readonly property int globeSize: Math.max(Style.space(200), Math.min(height - spinRow.height - content.gap, Math.round(width * 0.54)))
+
+          Globe {
+            id: theGlobe
+            anchors.left: parent.left
+            anchors.top: parent.top
+            width: globeView.globeSize
+            height: width
+            lat0: root.globeLat
+            lon0: root.globeLon
+            dots: root.globeDots
+            spots: root.spots
+            picked: root.pickedSpot
+            onSpotPicked: function(index) { root.pickSpot(index) }
+            onDragChanged: function(dragging) { root.globeDragging = dragging }
+            onTurned: function(dLat, dLon) {
+              root.globeLat = Math.max(-75, Math.min(75, root.globeLat + dLat))
+              root.globeLon = root.globeLon + dLon
+            }
+          }
+
+          Row {
+            id: spinRow
+            anchors.horizontalCenter: theGlobe.horizontalCenter
+            anchors.top: theGlobe.bottom
+            anchors.topMargin: Style.spacing.sm
+            spacing: Style.spacing.xxl * 2
+            TurnButton { glyph: "‹"; caption: "turn it"; delta: -40; spins: true }
+            TurnButton { glyph: "›"; caption: "turn it"; delta: 40; spins: true }
+          }
+
+          Column {
+            id: spotColumn
+            anchors.left: theGlobe.right
+            anchors.leftMargin: content.gap * 2
+            anchors.right: parent.right
+            anchors.top: parent.top
+            spacing: Style.spacing.md
+
+            Text {
+              width: parent.width
+              textFormat: Text.PlainText
+              text: root.pickedView
+                ? root.pickedView.name + (root.pickedView.where !== "" ? ", " + root.pickedView.where : "")
+                : "Tap a dot on the globe."
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.display
+              font.bold: true
+              wrapMode: Text.WordWrap
+            }
+
+            Text {
+              width: parent.width
+              visible: text !== ""
+              textFormat: Text.PlainText
+              text: root.pickedView && root.pickedView.timeText !== ""
+                ? root.pickedView.timeText + (root.pickedView.dayLabel !== "" && root.pickedView.dayLabel !== "today" ? "  ·  " + root.pickedView.dayLabel : "")
+                : ""
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.displayLarge
+              font.bold: true
+            }
+
+            Text {
+              width: parent.width
+              visible: text !== ""
+              textFormat: Text.PlainText
+              text: root.pickedView ? root.pickedView.timeWords : ""
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.heading
+              wrapMode: Text.WordWrap
+            }
+
+            Sky {
+              width: parent.width
+              height: Math.round(globeView.height * 0.30)
+              isDay: root.pickedView ? root.pickedView.isDay : true
+              t: root.pickedView ? root.pickedView.t : 0.5
+              bodySize: Style.space(40)
+            }
+
+            Text {
+              width: parent.width
+              textFormat: Text.PlainText
+              text: root.pickedView
+                ? root.pickedView.sentence
+                : "The shaded side is having its night, and the little sun is where it is straight overhead. Drag the globe, or turn it with the buttons under it."
+              color: root.pickedView ? root.foreground : root.quiet
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.heading
+              wrapMode: Text.WordWrap
+            }
+
+            Text {
+              width: parent.width
+              visible: text !== ""
+              textFormat: Text.PlainText
+              text: root.pickedView ? root.pickedView.offsetWords : ""
+              color: root.quiet
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.title
+            }
+          }
+        }
+
+        // ---- the theme screen: one tile per installed theme, painted in
+        // that theme's own colours, and the current one marked.
+        Item {
+          id: themeView
+          visible: !root.playing && root.showTheme
+          anchors.fill: parent
+          anchors.bottomMargin: toolbar.height + content.gap
+
+          Text {
+            id: themeTitle
+            width: parent.width
+            textFormat: Text.PlainText
+            text: "Pick a look"
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.displayLarge
+            font.bold: true
+          }
+
+          Text {
+            id: themeSubtitle
+            anchors.top: themeTitle.bottom
+            anchors.topMargin: Style.spacing.xs
+            width: parent.width
+            textFormat: Text.PlainText
+            text: root.themeChanging
+              ? "Changing to " + Model.themeTitle(root.themePending) + "..."
+              : "The whole computer changes to match, and so does this clock. Right now it's " + (root.themeSlug !== "" ? Model.themeTitle(root.themeSlug) : "unknown") + "."
+            color: root.themeChanging ? root.sunColor : root.quiet
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.title
+            wrapMode: Text.WordWrap
+          }
+
+          Flow {
+            id: themeGrid
+            anchors.top: themeSubtitle.bottom
+            anchors.topMargin: content.gap * 2
+            width: parent.width
+            spacing: Style.spacing.lg
+            readonly property int columns: 6
+            readonly property int tileWidth: Math.floor((width - spacing * (columns - 1)) / columns)
+
+            Repeater {
+              model: root.themes
+
+              Item {
+                id: tile
+                required property var modelData
+                readonly property bool current: modelData.slug === root.themeSlug
+                width: themeGrid.tileWidth
+                height: swatch.height + Style.spacing.sm + tileName.implicitHeight
+
+                Rectangle {
+                  id: swatch
+                  width: parent.width
+                  height: Style.space(64)
+                  radius: root.cornerRadius
+                  color: tile.modelData.background
+                  border.width: tile.current ? Math.max(2, Style.space(3)) : Math.max(1, Style.space(1))
+                  border.color: tile.current ? root.sunColor : Util.alpha(root.foreground, tileArea.containsMouse ? 0.5 : 0.18)
+                  Behavior on border.color { ColorAnimation { duration: 120 } }
+
+                  Rectangle {
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    anchors.margins: Math.max(2, Style.space(6))
+                    width: Style.space(14)
+                    radius: Math.max(2, root.cornerRadius / 2)
+                    color: tile.modelData.accent
+                  }
+
+                  Text {
+                    anchors.centerIn: parent
+                    anchors.horizontalCenterOffset: Style.space(8)
+                    textFormat: Text.PlainText
+                    text: "12:30"
+                    color: tile.modelData.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.display
+                    font.bold: true
+                  }
+                }
+
+                Text {
+                  id: tileName
+                  anchors.top: swatch.bottom
+                  anchors.topMargin: Style.spacing.sm
+                  width: parent.width
+                  textFormat: Text.PlainText
+                  text: tile.modelData.title
+                  color: tile.current ? root.sunColor : root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.subtitle
+                  font.bold: tile.current
+                  elide: Text.ElideRight
+                }
+
+                MouseArea {
+                  id: tileArea
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.chooseTheme(tile.modelData.slug)
+                }
+              }
+            }
+          }
+        }
+
         // ---- the game: the face on the left, the words and the sky on the
         // right, and four big buttons that turn the hands.
         Item {
@@ -1564,7 +2079,8 @@ Item {
         }
 
         // ---- the buttons: what can be done from here on the left, Close on
-        // the right. Only the buttons that mean something now are shown.
+        // the right. Only the buttons that mean something now are shown, and
+        // the row wraps rather than run under Close if a theme's font is wide.
         Item {
           id: toolbar
           anchors.left: parent.left
@@ -1572,26 +2088,35 @@ Item {
           anchors.bottom: parent.bottom
           height: Math.max(actions.implicitHeight, closeButton.implicitHeight)
 
-          readonly property bool onClock: !root.playing && !root.showPeople
+          readonly property bool onClock: !root.playing && !root.showPeople && !root.showTheme && !root.showGlobe && !root.showMap
+          readonly property bool onMap: !root.playing && !root.showPeople && !root.showTheme && !root.showGlobe && root.showMap
+          readonly property bool onGlobe: !root.playing && !root.showPeople && !root.showTheme && root.showGlobe
+          readonly property bool onWorld: onClock || onMap || onGlobe
           readonly property bool onList: root.showPeople && (root.peopleMode === "list" || root.peopleMode === "remove")
           readonly property bool editing: root.showPeople && (root.peopleMode === "name" || root.peopleMode === "place")
 
-          Row {
+          Flow {
             id: actions
             anchors.left: parent.left
-            anchors.verticalCenter: parent.verticalCenter
+            anchors.bottom: parent.bottom
+            width: parent.width - closeButton.width - Style.spacing.lg
             spacing: Style.spacing.lg
 
-            // The clock and the map.
-            ActionButton { visible: toolbar.onClock; text: "←  Earlier"; onClicked: if (root.clock) root.clock.scrub(-60) }
-            ActionButton { visible: toolbar.onClock; text: "Later  →"; onClicked: if (root.clock) root.clock.scrub(60) }
-            ActionButton { visible: toolbar.onClock && root.scrubbing; primary: true; text: "Back to now"; onClicked: if (root.clock) root.clock.resetScrub() }
-            ActionButton { visible: toolbar.onClock && !root.showMap && root.hasFace; text: "Set the clock"; onClicked: root.startGame() }
-            ActionButton { visible: toolbar.onClock && root.hasMap; text: root.showMap ? "The clock" : "The map"; onClicked: root.showMap = !root.showMap }
-            ActionButton { visible: toolbar.onClock; text: "People"; onClicked: root.openPeople() }
+            // The clock, the map and the globe share the sun.
+            ActionButton { visible: toolbar.onWorld; text: "←  Earlier"; onClicked: if (root.clock) root.clock.scrub(-60) }
+            ActionButton { visible: toolbar.onWorld; text: "Later  →"; onClicked: if (root.clock) root.clock.scrub(60) }
+            ActionButton { visible: toolbar.onWorld && root.scrubbing; primary: true; text: "Back to now"; onClicked: if (root.clock) root.clock.resetScrub() }
+            ActionButton { visible: toolbar.onClock && root.hasFace; text: "Play"; onClicked: root.startGame() }
+            ActionButton { visible: toolbar.onClock && root.hasMap; text: "Map"; onClicked: { root.showGlobe = false; root.showMap = true } }
+            ActionButton { visible: toolbar.onClock || toolbar.onMap; text: "Globe"; onClicked: root.openGlobe() }
+            ActionButton { visible: toolbar.onClock || toolbar.onMap; text: "People"; onClicked: root.openPeople() }
+            ActionButton { visible: toolbar.onClock; text: "Theme"; onClicked: root.openTheme() }
+            ActionButton { visible: toolbar.onGlobe; text: "Find home"; onClicked: root.centreGlobeOnHome() }
+            ActionButton { visible: toolbar.onMap; text: "Clock"; onClicked: root.showMap = false }
+            ActionButton { visible: toolbar.onGlobe; text: "Clock"; onClicked: root.closeGlobe() }
 
             // The People screen.
-            ActionButton { visible: toolbar.onList; text: "←  The clock"; onClicked: root.closePeople() }
+            ActionButton { visible: toolbar.onList; text: "←  Clock"; onClicked: root.closePeople() }
             ActionButton { visible: toolbar.editing; text: "←  Back"; onClicked: root.editBack() }
             ActionButton {
               visible: root.showPeople && root.peopleMode === "name"
@@ -1608,8 +2133,11 @@ Item {
               onClicked: root.editAccept()
             }
 
+            // The theme screen.
+            ActionButton { visible: !root.playing && root.showTheme; text: "←  Clock"; onClicked: root.closeTheme() }
+
             // The game.
-            ActionButton { visible: root.playing; text: "←  The clock"; onClicked: root.stopGame() }
+            ActionButton { visible: root.playing; text: "←  Clock"; onClicked: root.stopGame() }
             ActionButton { visible: root.playing; text: "Start again"; onClicked: if (root.currentRound) root.hands = root.currentRound.startHands }
             ActionButton {
               visible: root.playing && root.solved
@@ -1622,7 +2150,7 @@ Item {
           ActionButton {
             id: closeButton
             anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
+            anchors.bottom: parent.bottom
             text: "Close"
             onClicked: root.dismiss()
           }

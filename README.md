@@ -20,6 +20,14 @@ ring where Grandma's sun really is.
 
 ![The set-the-clock game on the Tinkerer face](preview-game.png)
 
+Every band gets the globe: the earth as dots, the night side shaded, and a
+marker for home, for each person and for fifty well-known places. Turn it
+with two buttons or a drag, tap a place, and the clock says what time it is
+there. A Theme button switches the whole computer to another of Omarchy's
+themes, and the clock changes with it.
+
+![The globe, turned to Sydney](preview-globe.png)
+
 The plugin binds to Omarchy's theme tokens and ships no colours of its own.
 The sun is the theme accent and the moon is the theme foreground, so it
 re-tints when the theme changes, like the rest of the shell.
@@ -35,6 +43,31 @@ The age band is a parent setting. Each band adds to the one before.
 | navigator | 8 to 10 | adds the world map with the night side, "3 hours ahead", up to six people; the game works in five minutes |
 
 ![The Tinkerer face: the digits, the analog face and the day labels](preview-tinkerer.png)
+
+## The globe
+
+Globe, on every band, shows the earth as a globe of dots with the night side
+shaded, the sun where it is straight overhead, a ring for home, an accent dot
+for each person, and a plain dot for each of fifty places most children have
+heard of, from Honolulu round to Auckland. It starts turned to home. The two
+round buttons under it turn it forty degrees at a time, dragging turns it
+freely, and Find home brings it back. Tapping any dot names the place and says
+the time there: the digits and "tomorrow" on the bands that read them, the
+time in words ("It's about five to twelve in the morning"), the sky there, and
+what a child there is probably doing, which is the family's own routine moved
+to that place, the same honest guess the cards make. Earlier and Later move
+the sun here too, and the night sweeps round the globe as it goes.
+
+## Pick a look
+
+Theme shows one tile per installed theme, painted in that theme's own
+background and accent with the current one marked. Tapping a tile runs
+`omarchy-theme-set`, the same switch the Omarchy menu uses, so the whole
+computer changes and this clock changes with it, because everything it draws
+is bound to the theme tokens. The tile colours are read from each theme's
+`colors.toml` by `bin/list-themes`.
+
+![The theme screen](preview-theme.png)
 
 ## The map
 
@@ -65,9 +98,11 @@ omarchy plugin enable ignibyte.kids-clock right
 
 The plugin lands disabled so you can read the code first. Omarchy plugins run
 unsandboxed inside `omarchy-shell` with your permissions. This one runs
-`date` and `timedatectl` and reads its own `data/` files. It makes no
-network requests and writes nothing outside `~/.config/omarchy/shell.json`,
-where Omarchy keeps every plugin's settings.
+`date` and `timedatectl`, reads its own `data/` files, lists the theme
+folders with `bin/list-themes`, and runs `omarchy-theme-set` when a theme is
+tapped. It makes no network requests and writes nothing outside
+`~/.config/omarchy/shell.json`, where Omarchy keeps every plugin's settings,
+apart from what a theme switch itself writes.
 
 ## Adding people
 
@@ -122,16 +157,20 @@ Only the ones that mean something right now are shown.
 
 | Button | Does |
 |---|---|
-| Earlier, Later | move the sun an hour earlier or later |
+| Earlier, Later | move the sun an hour earlier or later, on the clock, the map and the globe |
 | Back to now | appears once the sun has moved, and puts it back |
-| Set the clock | opens the set-the-clock game (tinkerer and navigator); clicking the analog face does the same |
-| The map, The clock | swap between the map and the clock (navigator) |
+| Play | opens the set-the-clock game (tinkerer and navigator); clicking the analog face does the same |
+| Map | the world map with the night side (navigator) |
+| Globe | the globe; under it two round buttons turn it, and Find home brings it back to home |
 | People | the People screen, where a parent adds and removes people |
+| Theme | the theme screen |
+| Clock | back to the clock from the map, the globe or the theme screen |
 | Close | closes the big clock; so does a click outside the card |
 
 The keys do the same for anyone at a keyboard: Left and Right move the sun
 (a quarter hour with Shift), 0 comes back to now, Enter opens the game, M is
-the map, P is people, and Escape steps back and finally closes.
+the map, G the globe, P people, T the theme screen, and Escape steps back and
+finally closes.
 
 A view can be opened directly, which suits a keybinding:
 
@@ -139,6 +178,8 @@ A view can be opened directly, which suits a keybinding:
 omarchy-shell shell toggle ignibyte.kids-clock '{"view":"map"}'
 omarchy-shell shell toggle ignibyte.kids-clock '{"view":"game"}'
 omarchy-shell shell toggle ignibyte.kids-clock '{"view":"people"}'
+omarchy-shell shell toggle ignibyte.kids-clock '{"view":"globe"}'
+omarchy-shell shell toggle ignibyte.kids-clock '{"view":"theme"}'
 ```
 
 ## The set-the-clock game
@@ -170,10 +211,13 @@ and Down an hour, 0 resets them, Enter moves on and Escape leaves.
 it: the sunrise equation for the sun's place on the arc and for the night
 side of the map, the routine mapping, the words, the hand angles, and the
 game's rounds and hints. QML's JavaScript has no time zone tables, so
-`Service.qml` asks `date` for each zone's offset through a Quickshell
-process, one at a time. `Overlay.qml` draws the skies and the map with
-QtQuick Shapes (the land as one SVG path built from the data file) and the
-face from rotated rectangles, all bound to theme colours so they re-tint;
+`Service.qml` asks `date` for the zones' offsets through one Quickshell
+process per batch. `Overlay.qml` draws the skies, the map and the globe with
+QtQuick Shapes (the map's land as one SVG path built from the data file, the
+globe's land as one path of small squares from `data/globe.json`, three
+thousand equal-area samples of the same coastlines, and the globe's night as
+the near half of the terminator closed along the rim) and the face from
+rotated rectangles, all bound to theme colours so they re-tint;
 `BarWidget.qml` is the chip.
 
 ## Part of Omarchy Kids

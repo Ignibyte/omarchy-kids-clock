@@ -231,6 +231,28 @@ function offsetCommand(zone, epochSeconds) {
   return ["/usr/bin/env", "TZ=" + zone, "/usr/bin/date", "--date=@" + Math.floor(epochSeconds), "+%:z\t%Z\t%u"]
 }
 
+// argv for many zones at once, through bash: one line per zone,
+// "ZONE<TAB>+HH:MM<TAB>ABBR<TAB>weekday(1-7)". The tabs in the date format
+// are real tab characters, which date prints as they are.
+function offsetsCommand(zones, epochSeconds) {
+  var script = "for zone in \"$@\"; do printf '%s\\t' \"$zone\"; TZ=\"$zone\" /usr/bin/date --date=@"
+    + Math.floor(epochSeconds) + " '+%:z\t%Z\t%u' || echo; done"
+  return ["/usr/bin/bash", "-c", script, "kids-clock"].concat(zones || [])
+}
+
+// The lines offsetsCommand prints, as a map from zone to offset info.
+function parseOffsetLines(text) {
+  var out = {}
+  var lines = String(text || "").split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var tab = lines[i].indexOf("\t")
+    if (tab <= 0) continue
+    var info = parseOffsetLine(lines[i].slice(tab + 1))
+    if (info) out[lines[i].slice(0, tab)] = info
+  }
+  return out
+}
+
 // "+05:30" -> 19800, "-0700" -> -25200.
 function parseOffset(text) {
   var m = /^([+-])(\d{2}):?(\d{2})/.exec(trim(text))
@@ -663,6 +685,204 @@ function mapMarkers(home, homeLat, homeLon, people, rows) {
   return out
 }
 
+
+// ---- the globe. An orthographic view of the sphere centred on (lat0, lon0):
+// the land as dots, the night as the near half of the terminator closed
+// along the rim, and places as markers. A point is on the near side when
+// its cosine distance from the centre, `depth`, is positive.
+
+function globeBasis(lat0, lon0) {
+  var p0 = toRadians(lat0)
+  return { sinP: Math.sin(p0), cosP: Math.cos(p0), l0: toRadians(lon0) }
+}
+
+// Where a place lands on the disc, and its depth: 1 at the centre, 0 on the
+// rim, negative round the back.
+function globeProject(lat, lon, basis, r, cx, cy) {
+  var p = toRadians(lat)
+  var dl = toRadians(lon) - basis.l0
+  var cosP = Math.cos(p), sinP = Math.sin(p), cosDl = Math.cos(dl)
+  var depth = basis.sinP * sinP + basis.cosP * cosP * cosDl
+  return {
+    x: cx + r * cosP * Math.sin(dl),
+    y: cy - r * (basis.cosP * sinP - basis.sinP * cosP * cosDl),
+    depth: depth,
+    visible: depth >= 0
+  }
+}
+
+// The land as one path of small squares, one per sample on the near side,
+// shrinking towards the rim so the sphere reads as round. `dots` is flat
+// [lon, lat, ...] like the map's rings.
+function globeDotsPath(dots, lat0, lon0, r, cx, cy, size) {
+  if (!dots || dots.length < 2 || !(r > 0)) return ""
+  var basis = globeBasis(lat0, lon0)
+  var parts = []
+  for (var i = 0; i + 1 < dots.length; i += 2) {
+    var p = globeProject(dots[i + 1], dots[i], basis, r, cx, cy)
+    if (p.depth <= 0) continue
+    var s = (size * (0.45 + 0.55 * p.depth)).toFixed(1)
+    parts.push("M" + (p.x - s / 2).toFixed(1) + " " + (p.y - s / 2).toFixed(1) + "h" + s + "v" + s + "h-" + s + "z")
+  }
+  return parts.join("")
+}
+
+// The night on the globe. The terminator is a great circle, which the view
+// sees as an ellipse: the near half of it runs from one rim point to the
+// other, bulging away from the sun by the sun's own depth, and the night is
+// the region between that arc and the rim on the side away from the sun.
+// Sampled into a polygon rather than written as arcs, so no sweep flag has
+// to be guessed; with the sun straight ahead the polygon collapses onto the
+// rim, and with the sun behind it covers the whole disc.
+function globeNightPath(utcMs, lat0, lon0, r, cx, cy, steps) {
+  var n = steps > 3 ? steps : 36
+  var basis = globeBasis(lat0, lon0)
+  var sun = subsolarPoint(utcMs)
+  var s = globeProject(sun.lat, sun.lon, basis, 1, 0, 0)
+  var sx = s.x, sy = -s.y, sz = s.depth
+  var perp = Math.sqrt(sx * sx + sy * sy)
+  var dx = perp > 1e-9 ? sx / perp : 1, dy = perp > 1e-9 ? sy / perp : 0
+  var ux = -dy, uy = dx
+  var points = []
+  for (var i = 0; i <= n; i++) {
+    var t = Math.PI * i / n
+    points.push([Math.cos(t) * ux - Math.sin(t) * sz * dx, Math.cos(t) * uy - Math.sin(t) * sz * dy])
+  }
+  var start = Math.atan2(-uy, -ux)
+  for (var j = 1; j < n; j++) {
+    var a = start - Math.PI * j / n
+    points.push([Math.cos(a), Math.sin(a)])
+  }
+  var out = []
+  for (var k = 0; k < points.length; k++) {
+    out.push((k === 0 ? "M" : "L") + (cx + r * points[k][0]).toFixed(1) + " " + (cy - r * points[k][1]).toFixed(1))
+  }
+  return out.join(" ") + " Z"
+}
+
+// Places most children have heard of, spread round the world, so the globe
+// has somewhere to tap wherever it is turned.
+var POPULAR_SPOTS = [
+  "Honolulu", "Anchorage", "Vancouver", "Los Angeles", "Denver", "Chicago", "Toronto", "New York",
+  "Mexico City", "Havana", "Lima", "Santiago, Chile", "Buenos Aires", "São Paulo", "Rio de Janeiro",
+  "Reykjavik", "London", "Paris", "Madrid", "Rome", "Berlin", "Stockholm", "Athens", "Istanbul",
+  "Cairo", "Lagos", "Nairobi", "Johannesburg", "Cape Town", "Moscow", "Riyadh", "Dubai", "Tehran",
+  "Karachi", "Mumbai", "Delhi", "Kathmandu", "Bangkok", "Hanoi", "Singapore", "Jakarta", "Hong Kong",
+  "Beijing", "Shanghai", "Seoul", "Tokyo", "Manila", "Perth", "Sydney", "Auckland"
+]
+
+function spotWhere(city) {
+  if (!city) return ""
+  if (city.country === "United States" && city.region) return city.region
+  return city.country || ""
+}
+
+function popularSpots(cities) {
+  var out = []
+  for (var i = 0; i < POPULAR_SPOTS.length; i++) {
+    var city = findCity(cities, POPULAR_SPOTS[i])
+    if (!city) continue
+    out.push({ kind: "spot", name: city.name, place: city.name, where: spotWhere(city), zone: city.zone, lat: city.lat, lon: city.lon })
+  }
+  return out
+}
+
+// Every marker the globe shows: home, the people, then the popular spots
+// that none of them already covers.
+function globeSpotList(homeName, homeCity, people, popular) {
+  var out = []
+  if (homeCity && homeCity.lat !== undefined && homeCity.lat !== null) {
+    out.push({ kind: "home", name: homeName || homeCity.name, place: homeCity.name, where: spotWhere(homeCity),
+      zone: homeCity.zone, lat: homeCity.lat, lon: homeCity.lon })
+  }
+  for (var i = 0; i < (people || []).length; i++) {
+    var person = people[i]
+    if (person.lat === null || person.lat === undefined) continue
+    out.push({ kind: "person", name: person.name, place: person.city, where: "", zone: person.zone, lat: person.lat, lon: person.lon })
+  }
+  for (var j = 0; j < (popular || []).length; j++) {
+    var spot = popular[j], covered = false
+    for (var k = 0; k < out.length; k++) {
+      if (Math.abs(out[k].lat - spot.lat) < 1 && Math.abs(out[k].lon - spot.lon) < 1) { covered = true; break }
+    }
+    if (!covered) out.push(spot)
+  }
+  return out
+}
+
+// The markers on the near side, nearest the rim first so the ones in the
+// middle draw on top. `index` points back into the spot list.
+function globeMarkers(spots, lat0, lon0, r, cx, cy) {
+  var basis = globeBasis(lat0, lon0)
+  var out = []
+  for (var i = 0; i < (spots || []).length; i++) {
+    var p = globeProject(spots[i].lat, spots[i].lon, basis, r, cx, cy)
+    if (p.depth <= 0.04) continue
+    out.push({ spot: spots[i], x: p.x, y: p.y, depth: p.depth, index: i })
+  }
+  out.sort(function(a, b) { return a.depth - b.depth })
+  return out
+}
+
+// What the globe says about a tapped place. A person's own words for a
+// person, home's for home, and for anywhere else the family's routine
+// moved there, the same honest guess the cards make.
+function spotView(spot, offsetInfo, utcMs, home, routine, rules, hourFormat) {
+  var offset = offsetInfo ? offsetInfo.offsetSeconds : null
+  if (offset === null || offset === undefined) {
+    return { name: spot.name, where: spot.where || "", ready: false, isDay: true, t: 0.5,
+      sentence: "Finding the time in " + spot.place + "...", timeWords: "", timeText: "", dayLabel: "", offsetWords: "" }
+  }
+  var parts = localParts(utcMs, offset)
+  var sky = skyPosition(utcMs, solarTimesFor(utcMs, spot, offset))
+  var activity = activityAt(parts.minutesOfDay, routine, parts.weekend)
+  var label = home && rules.dayLabel ? dayLabel(home.dayIndex, parts.dayIndex) : "today"
+  var sentence
+  if (spot.kind === "home") {
+    sentence = homeSentence(spot.place, parts.minutesOfDay)
+  } else {
+    sentence = "In " + spot.place + " it's " + timeWords(parts.minutesOfDay)
+    if (label === "tomorrow") sentence += ", and it's already tomorrow"
+    else if (label === "yesterday") sentence += ", and it's still yesterday"
+    sentence += ". " + (spot.kind === "person" ? spot.name + " is" : "Children there are") + " probably " + activity.label + "."
+  }
+  var rounded = roundMinutes(parts.minutesOfDay, 5)
+  return {
+    name: spot.name,
+    where: spot.kind === "person" ? spot.place : (spot.where || ""),
+    ready: true,
+    isDay: sky.isDay,
+    t: clamp01(sky.t),
+    sentence: sentence,
+    timeWords: "It's about " + clockWords(rounded) + " " + dayPartWords(rounded) + ".",
+    timeText: rules.digits ? formatTime(parts.hour, parts.minute, hourFormat) : "",
+    dayLabel: rules.dayLabel ? label : "",
+    offsetWords: rules.offsets && home && spot.kind !== "home" ? offsetWords(offset, home.offsetSeconds) : ""
+  }
+}
+
+// ---- the themes. A folder name becomes a title the way omarchy-theme-list
+// makes one, and the lines the listing script prints become swatches.
+
+function themeTitle(slug) {
+  return String(slug || "").split("-").map(function(word) {
+    return word === "" ? "" : word.charAt(0).toUpperCase() + word.slice(1)
+  }).join(" ")
+}
+
+function parseThemeLines(text) {
+  var out = []
+  var lines = String(text || "").split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var cells = lines[i].split("\t")
+    if (cells.length < 4 || cells[0] === "") continue
+    out.push({ slug: cells[0], title: themeTitle(cells[0]), background: cells[1], foreground: cells[2],
+      accent: cells[3], light: (cells[4] || "").trim() === "light" })
+  }
+  out.sort(function(a, b) { return a.title.localeCompare(b.title) })
+  return out
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     bandRules: bandRules,
@@ -675,6 +895,8 @@ if (typeof module !== "undefined") {
     offsetCommand: offsetCommand,
     parseOffset: parseOffset,
     parseOffsetLine: parseOffsetLine,
+    offsetsCommand: offsetsCommand,
+    parseOffsetLines: parseOffsetLines,
     localParts: localParts,
     formatTime: formatTime,
     dayLabel: dayLabel,
@@ -713,6 +935,16 @@ if (typeof module !== "undefined") {
     removePerson: removePerson,
     DEFAULT_PEOPLE: DEFAULT_PEOPLE,
     SUN_GLYPH: SUN_GLYPH,
+    globeBasis: globeBasis,
+    globeProject: globeProject,
+    globeDotsPath: globeDotsPath,
+    globeNightPath: globeNightPath,
+    popularSpots: popularSpots,
+    globeSpotList: globeSpotList,
+    globeMarkers: globeMarkers,
+    spotView: spotView,
+    themeTitle: themeTitle,
+    parseThemeLines: parseThemeLines,
     MOON_GLYPH: MOON_GLYPH
   }
 }

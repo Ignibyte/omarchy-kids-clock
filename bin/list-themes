@@ -1,0 +1,11 @@
+#!/bin/bash
+# One line per installed theme, for the Theme screen: folder name, then the
+# background, foreground, accent and mode from its colors.toml, tab-separated.
+# Your own themes in ~/.config/omarchy/themes come first, then Omarchy's.
+set -u
+pick() { sed -nE "s/^$2 *= *\"([^\"]+)\".*/\1/p" "$1" | head -1; }
+for dir in "$HOME"/.config/omarchy/themes/*/ "${OMARCHY_PATH:-/usr/share/omarchy}"/themes/*/; do
+  file="$dir/colors.toml"
+  [ -f "$file" ] || continue
+  printf '%s\t%s\t%s\t%s\t%s\n' "$(basename "$dir")" "$(pick "$file" background)" "$(pick "$file" foreground)" "$(pick "$file" accent)" "$(pick "$file" mode)"
+done

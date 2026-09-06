@@ -312,4 +312,98 @@ check("the people setting edits as a string and round-trips", () => {
   assert.strictEqual(Model.peopleString([]), "")
 })
 
+check("the globe projects the centre to the middle and hides the far side", () => {
+  const basis = Model.globeBasis(30, -90)
+  const centre = Model.globeProject(30, -90, basis, 100, 200, 200)
+  assert.ok(Math.abs(centre.x - 200) < 1e-6 && Math.abs(centre.y - 200) < 1e-6 && Math.abs(centre.depth - 1) < 1e-9)
+  const far = Model.globeProject(-30, 90, basis, 100, 200, 200)
+  assert.ok(!far.visible && Math.abs(far.depth + 1) < 1e-9)
+  const east = Model.globeProject(0, 0, basis, 100, 200, 200)
+  assert.ok(Math.abs(east.x - 300) < 1e-6 && Math.abs(east.depth) < 1e-9, "ninety degrees east sits on the right-hand rim")
+  const pole = Model.globeProject(90, 0, basis, 100, 200, 200)
+  assert.ok(pole.visible && pole.y < 200 && Math.abs(pole.x - 200) < 1e-6, "the pole shows above the centre when tilted")
+  const dots = Model.globeDotsPath([-90, 30, 90, -30, 1, 0], 30, -90, 100, 200, 200, 4)
+  assert.strictEqual((dots.match(/M/g) || []).length, 1, "the antipode and a point just round the rim are skipped")
+})
+
+check("the night on the globe is nothing, half, or everything as the sun moves round", () => {
+  const ms = Date.UTC(2026, 5, 21, 12, 0, 0)
+  const sun = Model.subsolarPoint(ms)
+  const area = (path) => {
+    const n = path.replace(/[MLZ]/g, " ").trim().split(/\s+/).map(Number)
+    let a = 0
+    for (let i = 0; i < n.length; i += 2) { const j = (i + 2) % n.length; a += n[i] * n[j + 1] - n[j] * n[i + 1] }
+    return Math.abs(a) / 2
+  }
+  const disc = Math.PI * 100 * 100
+  const facing = Model.globeNightPath(ms, sun.lat, sun.lon, 100, 200, 200, 36)
+  assert.ok(facing.indexOf("M") === 0 && facing.slice(-1) === "Z")
+  assert.ok(area(facing) < disc * 0.01, "sun straight ahead: no night")
+  assert.ok(area(Model.globeNightPath(ms, -sun.lat, sun.lon + 180, 100, 200, 200, 36)) > disc * 0.98, "sun behind: all night")
+  const half = area(Model.globeNightPath(ms, 0, sun.lon + 90, 100, 200, 200, 36))
+  assert.ok(Math.abs(half - disc / 2) < disc * 0.03, "sun on the rim: half, got " + (half / disc).toFixed(3))
+})
+
+check("the popular spots resolve and the globe's markers stay on the near side", () => {
+  const spots = Model.popularSpots(cities)
+  assert.ok(spots.length >= 45, "resolved " + spots.length)
+  assert.ok(spots.some(s => s.name === "Santiago" && s.where === "Chile"))
+  assert.ok(spots.some(s => s.name === "Chicago" && s.where === "Illinois"))
+  const people = [{ name: "Grandma", city: "Phoenix", zone: "America/Phoenix", lat: 33.45, lon: -112.07 }]
+  const all = Model.globeSpotList("Chicago", Model.findCity(cities, "Chicago"), people, spots)
+  assert.strictEqual(all[0].kind, "home")
+  assert.strictEqual(all[1].kind, "person")
+  assert.strictEqual(all.filter(s => s.place === "Chicago").length, 1, "home covers the popular Chicago")
+  const markers = Model.globeMarkers(all, 40, -100, 100, 200, 200)
+  assert.ok(markers.length > 5 && markers.length < all.length)
+  assert.ok(markers.every(m => m.depth > 0))
+  assert.ok(markers.some(m => m.spot.place === "Chicago") && !markers.some(m => m.spot.place === "Perth"))
+  assert.ok(markers[markers.length - 1].depth >= markers[0].depth, "nearest the middle comes last")
+})
+
+check("a tapped spot says the time there in words", () => {
+  const spot = { kind: "spot", name: "Tokyo", place: "Tokyo", where: "Japan", zone: "Asia/Tokyo", lat: 35.69, lon: 139.75 }
+  const routine = Model.routineFrom({})
+  const rules = Model.bandRules("navigator")
+  const utc = Date.UTC(2026, 8, 5, 22, 0, 0)
+  const home = Model.buildHome("Chicago", 41.8, -87.6, -5 * 3600, utc, rules, "12")
+  const view = Model.spotView(spot, { offsetSeconds: 9 * 3600 }, utc, home, routine, rules, "12")
+  assert.ok(view.ready && view.isDay)
+  assert.strictEqual(view.timeText, "7:00 AM")
+  assert.strictEqual(view.timeWords, "It's about seven o'clock in the morning.")
+  assert.strictEqual(view.sentence, "In Tokyo it's morning, and it's already tomorrow. Children there are probably waking up and having breakfast.")
+  assert.strictEqual(view.dayLabel, "tomorrow")
+  const grandma = Model.spotView({ kind: "person", name: "Grandma", place: "Phoenix", where: "", zone: "America/Phoenix", lat: 33.45, lon: -112.07 },
+    { offsetSeconds: -7 * 3600 }, utc, home, routine, rules, "12")
+  assert.ok(grandma.sentence.indexOf("In Phoenix it's afternoon. Grandma is probably") === 0, grandma.sentence)
+  assert.strictEqual(grandma.where, "Phoenix")
+  const waiting = Model.spotView(spot, null, utc, home, routine, rules, "12")
+  assert.ok(!waiting.ready && waiting.sentence.indexOf("Finding the time in Tokyo") === 0)
+  const here = Model.spotView({ kind: "home", name: "Chicago", place: "Chicago", where: "Illinois", zone: "America/Chicago", lat: 41.8, lon: -87.6 },
+    { offsetSeconds: -5 * 3600 }, utc, home, routine, rules, "12")
+  assert.strictEqual(here.sentence, "It's evening here in Chicago.")
+  assert.strictEqual(here.offsetWords, "", "home is not ahead of or behind itself")
+})
+
+check("theme folders become titles and swatches", () => {
+  assert.strictEqual(Model.themeTitle("tokyo-night"), "Tokyo Night")
+  assert.strictEqual(Model.themeTitle("catppuccin-latte"), "Catppuccin Latte")
+  const themes = Model.parseThemeLines("tokyo-night\t#1a1b26\t#a9b1d6\t#7aa2f7\tdark\nbad line\nwhite\t#ffffff\t#000000\t#0055aa\tlight\n")
+  assert.deepStrictEqual(themes.map(t => t.title), ["Tokyo Night", "White"])
+  assert.strictEqual(themes[1].light, true)
+  assert.strictEqual(themes[0].accent, "#7aa2f7")
+})
+
+check("many zones are asked in one process and parsed back by name", () => {
+  const { execFileSync } = require("child_process")
+  const argv = Model.offsetsCommand(["Asia/Tokyo", "America/Chicago", "Australia/Sydney"], Date.UTC(2026, 8, 5, 22, 0, 0) / 1000)
+  const text = execFileSync(argv[0], argv.slice(1), { encoding: "utf8" })
+  const parsed = Model.parseOffsetLines(text)
+  assert.strictEqual(parsed["Asia/Tokyo"].offsetSeconds, 9 * 3600)
+  assert.strictEqual(parsed["America/Chicago"].offsetSeconds, -5 * 3600)
+  assert.strictEqual(parsed["Australia/Sydney"].offsetSeconds, 10 * 3600)
+  assert.strictEqual(parsed["Asia/Tokyo"].weekday, 7, "Sunday morning in Tokyo")
+  assert.deepStrictEqual(Model.parseOffsetLines("junk\nAsia/Tokyo\tnonsense\n"), {})
+})
+
 console.log(passed + " checks passed")

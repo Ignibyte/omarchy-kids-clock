@@ -33,6 +33,8 @@ Item {
   property var cities: []
   // Natural Earth 1:110m land outlines, rings of [lon, lat, ...], for the map.
   property var land: []
+  // Land samples for the globe, flat [lon, lat, ...].
+  property var globeDots: []
   readonly property var people: Model.parsePeople(peopleText, cities, rules.maxPeople)
 
   // Home: the system zone, its offset straight from the JavaScript Date,
@@ -97,19 +99,41 @@ Item {
     process.running = true
   }
 
+  // One process for the whole list: fifty zones for the globe come back in
+  // one go rather than one `date` at a time.
+  function fetchOffsets(zones) {
+    if (!zones || zones.length === 0) return
+    root.enqueue(Model.offsetsCommand(zones, shownMs / 1000), function(exitCode, text) {
+      var parsed = Model.parseOffsetLines(text)
+      var updated = Object.assign({}, root.offsets)
+      var any = false
+      for (var zone in parsed) { updated[zone] = parsed[zone]; any = true }
+      if (any) root.offsets = updated
+    })
+  }
+
   function refreshOffsets() {
-    var epoch = shownMs / 1000
-    for (var i = 0; i < people.length; i++) {
-      (function(zone) {
-        root.enqueue(Model.offsetCommand(zone, epoch), function(exitCode, text) {
-          var parsed = exitCode === 0 ? Model.parseOffsetLine(text) : null
-          if (!parsed) return
-          var updated = Object.assign({}, root.offsets)
-          updated[zone] = parsed
-          root.offsets = updated
-        })
-      })(people[i].zone)
+    var zones = []
+    for (var i = 0; i < people.length; i++) zones.push(people[i].zone)
+    fetchOffsets(zones.concat(extraZones))
+  }
+
+  // Zones the globe asks about beyond the people's: fetched once when asked
+  // for, then kept fresh with the rest.
+  property var extraZones: []
+
+  function requestZones(zones) {
+    var next = extraZones.slice()
+    var added = []
+    for (var i = 0; i < (zones || []).length; i++) {
+      var zone = String(zones[i] || "")
+      if (zone === "" || next.indexOf(zone) !== -1) continue
+      next.push(zone)
+      added.push(zone)
     }
+    if (added.length === 0) return
+    extraZones = next
+    fetchOffsets(added)
   }
 
   onPeopleChanged: refreshOffsets()
@@ -155,7 +179,57 @@ Item {
     }
   }
 
-  onSourceDirChanged: if (sourceDir !== "") { citiesFile.reload(); landFile.reload() }
+  FileView {
+    id: globeFile
+    path: root.sourceDir === "" ? "" : root.sourceDir + "/data/globe.json"
+    printErrors: true
+    onLoaded: {
+      try { root.globeDots = JSON.parse(text()) } catch (e) { console.warn("kids-clock: globe.json unreadable:", e) }
+    }
+  }
+
+  onSourceDirChanged: if (sourceDir !== "") { citiesFile.reload(); landFile.reload(); globeFile.reload(); themeList.running = true }
+
+  // ---- the themes, for the Theme screen: every theme folder with its
+  // colours, the one in use, and the switch itself through omarchy-theme-set,
+  // which re-tints this plugin along with everything else.
+  property var themes: []
+  property string themeSlug: ""
+  readonly property string themeTitle: Model.themeTitle(themeSlug)
+
+  Process {
+    id: themeList
+    command: ["bash", root.sourceDir + "/bin/list-themes"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.themes = Model.parseThemeLines(text)
+    }
+  }
+
+  FileView {
+    id: themeName
+    path: Quickshell.env("HOME") + "/.local/state/omarchy/current/theme.name"
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.themeSlug = String(text()).trim()
+    onFileChanged: reload()
+  }
+
+  function applyTheme(slug) {
+    var name = String(slug || "").replace(/[^A-Za-z0-9._-]/g, "")
+    if (name === "" || themeSetter.running) return false
+    themeSetter.command = ["omarchy-theme-set", name]
+    themeSetter.running = true
+    return true
+  }
+
+  Process {
+    id: themeSetter
+    onExited: function(exitCode) {
+      if (exitCode !== 0) console.warn("kids-clock: omarchy-theme-set exited with", exitCode)
+      themeList.running = true
+    }
+  }
 
   Timer {
     interval: 1000
