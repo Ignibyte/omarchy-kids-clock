@@ -406,4 +406,109 @@ check("many zones are asked in one process and parsed back by name", () => {
   assert.deepStrictEqual(Model.parseOffsetLines("junk\nAsia/Tokyo\tnonsense\n"), {})
 })
 
+check("zones are gated: real tzdata names pass, paths and junk do not", () => {
+  for (const good of ["America/Phoenix", "Etc/GMT+3", "America/Argentina/Buenos_Aires", "America/Port-au-Prince"]) assert.ok(Model.isZone(good), good)
+  for (const bad of ["/dev/ptmx", "../x", "America/", "a b/c", "x\ty/z", "Phoenix", "A/B/C/D", "$(id)/x", "America/" + "x".repeat(60)])
+    assert.ok(!Model.isZone(bad), bad)
+  const people = Model.parsePeople("Nana=/dev/ptmx; Pop=America/Denver", cities, 6)
+  assert.strictEqual(people.length, 1)
+  assert.strictEqual(people[0].zone, "America/Denver")
+})
+
+check("the people setting is bounded and cleaned", () => {
+  const many = Array.from({ length: 100 }, (_, i) => "P" + i + "=Tokyo").join("; ")
+  assert.strictEqual(Model.parsePeopleRaw(many).length, 32)
+  assert.strictEqual(Model.parsePeopleRaw("N=" + "x".repeat(200))[0].where.length, 64)
+  assert.strictEqual(Model.peopleString([{ name: "Na\nna", where: "Sydney\t" }]), "Na na=Sydney")
+  assert.strictEqual(Model.cleanField("  a;b=c  ", 40), "a b c")
+  assert.strictEqual(Model.bandRules("__proto__").label, "Explorer")
+  assert.strictEqual(Model.bandRules("constructor").label, "Explorer")
+  assert.strictEqual(Model.parseClock("  8   pm ", 0), 20 * 60)
+})
+
+check("an unknown zone comes back as unknown, not as UTC", () => {
+  const { execFileSync } = require("child_process")
+  const argv = Model.offsetsCommand(["America/Pheonix", "Asia/Tokyo"], Date.UTC(2026, 8, 5, 22, 0, 0) / 1000)
+  const parsed = Model.parseOffsetLines(execFileSync(argv[0], argv.slice(1), { encoding: "utf8" }))
+  assert.strictEqual(parsed["America/Pheonix"].unknown, true)
+  assert.strictEqual(parsed["Asia/Tokyo"].offsetSeconds, 9 * 3600)
+  const row = Model.buildRow({ name: "Nana", city: "Pheonix", zone: "America/Pheonix", lat: null, lon: null }, { unknown: true },
+    Date.now(), null, Model.routineFrom({}), Model.bandRules("explorer"), "12")
+  assert.ok(!row.ready && row.unknown && row.sentence.indexOf("Pheonix is not a place") === 0, row.sentence)
+})
+
+check("New Zealand on summer time has a day, and a sunset after midnight is still day", () => {
+  const auckland = Model.findCity(cities, "Auckland")
+  const nz = Date.UTC(2026, 11, 15, 1, 0, 0)
+  const sky = Model.skyPosition(nz, Model.solarTimes(nz, auckland.lat, auckland.lon, 13 * 3600))
+  assert.ok(sky.isDay && sky.t > 0.3 && sky.t < 0.8, "Auckland at 14:00 NZDT: " + JSON.stringify(sky))
+  const reykjavik = Model.findCity(cities, "Reykjavik")
+  const june = Date.UTC(2026, 5, 22, 0, 2, 0)
+  const late = Model.skyPosition(june, Model.solarTimes(june, reykjavik.lat, reykjavik.lon, 0))
+  assert.ok(late.isDay, "Reykjavík two minutes past midnight in June: " + JSON.stringify(late))
+})
+
+check("words for quarter hours, minutes, midday and a bedtime after midnight", () => {
+  assert.strictEqual(Model.offsetWords(5.75 * 3600, 0), "5¾ hours ahead")
+  assert.strictEqual(Model.offsetWords(-900, 0), "a quarter of an hour behind")
+  assert.strictEqual(Model.offsetWords(3600, 0), "1 hour ahead")
+  assert.strictEqual(Model.offsetWords(1800, 0), "half an hour ahead")
+  assert.strictEqual(Model.scrubWords(15), "Pretend it's 15 minutes later")
+  assert.strictEqual(Model.scrubWords(-75), "Pretend it's 1 hour 15 minutes earlier")
+  assert.strictEqual(Model.scrubWords(180), "Pretend it's 3 hours later")
+  assert.strictEqual(Model.clockWords(61), "1 minute past one")
+  assert.strictEqual(Model.dayPartWords(720), "at midday")
+  const late = Model.routineFrom({ bedTime: "00:30", wakeTime: "07:00" })
+  assert.strictEqual(Model.activityAt(19 * 60, late, false).key, "playing")
+  assert.strictEqual(Model.activityAt(10, late, false).key, "bedtime")
+  assert.strictEqual(Model.activityAt(60, late, false).key, "asleep")
+  assert.strictEqual(Model.activityAt(7 * 60 + 10, late, false).key, "waking")
+})
+
+check("every city keeps to its country's zones, comes back from its own key, and the spots are right", () => {
+  const zoneCodes = {}
+  for (const line of fs.readFileSync("/usr/share/zoneinfo/zone1970.tab", "utf8").split("\n")) {
+    if (!line || line[0] === "#") continue
+    const cells = line.split("\t"); zoneCodes[cells[2]] = cells[0].split(",")
+  }
+  const isoNames = {}
+  for (const line of fs.readFileSync("/usr/share/zoneinfo/iso3166.tab", "utf8").split("\n")) {
+    if (!line || line[0] === "#") continue
+    const [code, name] = line.split("\t"); isoNames[name.toLowerCase()] = code
+  }
+  const alias = { "united states": "US", "united states of america": "US", "russia": "RU", "south korea": "KR", "north korea": "KP",
+    "czech republic": "CZ", "czechia": "CZ", "democratic republic of the congo": "CD", "congo (kinshasa)": "CD", "republic of the congo": "CG",
+    "congo (brazzaville)": "CG", "iran": "IR", "vietnam": "VN", "bolivia": "BO", "venezuela": "VE", "tanzania": "TZ", "laos": "LA", "syria": "SY",
+    "united kingdom": "GB", "taiwan": "TW", "the bahamas": "BS", "gambia": "GM", "the gambia": "GM", "ivory coast": "CI", "brunei": "BN",
+    "macedonia": "MK", "north macedonia": "MK", "east timor": "TL", "timor-leste": "TL", "cape verde": "CV", "swaziland": "SZ", "eswatini": "SZ",
+    "moldova": "MD", "palestine": "PS", "myanmar": "MM", "burma": "MM", "federated states of micronesia": "FM", "micronesia": "FM",
+    "saint kitts and nevis": "KN", "saint lucia": "LC", "saint vincent and the grenadines": "VC", "sao tome and principe": "ST",
+    "são tomé and príncipe": "ST", "hong kong s.a.r.": "HK", "hong kong": "HK", "macau s.a.r": "MO", "macau": "MO", "vatican": "VA",
+    "vatican city": "VA", "republic of serbia": "RS", "guinea bissau": "GW", "brunei darussalam": "BN", "curaçao": "CW", "åland": "AX",
+    "united states virgin islands": "VI", "u.s. virgin islands": "VI", "somaliland": "SO", "northern cyprus": "CY" }
+  const mismatches = [], skipped = []
+  for (const c of cities) {
+    const key = c.country.toLowerCase()
+    const code = alias[key] || isoNames[key]
+    const codes = zoneCodes[c.zone]
+    if (!code) { skipped.push(c.country); continue }
+    if (!codes) continue
+    if (!codes.includes(code)) mismatches.push(c.name + " (" + c.country + ") " + c.zone)
+  }
+  assert.deepStrictEqual(mismatches, [])
+  assert.ok(skipped.length < cities.length * 0.05, "unmapped countries: " + [...new Set(skipped)].join(", "))
+  const lost = cities.filter(c => Model.findCity(cities, Model.cityKey(cities, c)) !== c).map(c => c.name + ", " + c.region + ", " + c.country)
+  assert.deepStrictEqual(lost, [])
+  const spots = Model.popularSpots(cities)
+  const zoneOf = (name) => spots.find(s => s.name === name).zone
+  assert.strictEqual(zoneOf("Lagos"), "Africa/Lagos")
+  assert.strictEqual(zoneOf("Santiago"), "America/Santiago")
+  assert.strictEqual(zoneOf("Beijing"), "Asia/Shanghai")
+  assert.strictEqual(zoneOf("Kathmandu"), "Asia/Kathmandu")
+  assert.strictEqual(spots.length, 50)
+  assert.strictEqual(Model.findCity(cities, "Washington").region, "District of Columbia")
+  assert.strictEqual(Model.findCity(cities, "Kobenhavn").name, "København")
+  assert.strictEqual(Model.findCity(cities, ","), null)
+})
+
 console.log(passed + " checks passed")

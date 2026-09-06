@@ -51,13 +51,16 @@ Item {
   // low alpha. Nothing here is a fixed hex.
   readonly property color sunColor: Color.accent
   readonly property color moonColor: foreground
-  readonly property color daySky: Util.alpha(foreground, 0.07)
-  readonly property color nightSky: Util.alpha(Qt.darker(background, 1.6), 0.55)
+  // A near-black background has no darker to go, so on a dark theme day is
+  // lifted and night sits a shade above the card; a light theme darkens.
+  readonly property bool darkTheme: background.hsvValue < 0.5
+  readonly property color daySky: Util.alpha(foreground, darkTheme ? 0.14 : 0.07)
+  readonly property color nightSky: darkTheme ? Util.alpha(foreground, 0.06) : Util.alpha(Qt.darker(background, 1.6), 0.55)
   readonly property color horizon: Util.alpha(foreground, 0.35)
-  readonly property color quiet: Util.alpha(foreground, 0.62)
+  readonly property color quiet: Util.alpha(foreground, 0.75)
   readonly property color dial: Util.alpha(foreground, 0.05)
   readonly property color landColor: Util.alpha(foreground, 0.30)
-  readonly property color nightShade: Util.alpha(Qt.darker(background, 1.8), 0.6)
+  readonly property color nightShade: darkTheme ? Util.alpha(background, 0.7) : Util.alpha(Qt.darker(background, 1.8), 0.6)
   readonly property color goodDot: Color.accent
   readonly property color busyDot: Util.alpha(foreground, 0.45)
   readonly property color asleepDot: Util.alpha(foreground, 0.2)
@@ -67,6 +70,11 @@ Item {
 
   readonly property var home: clock ? clock.home : null
   readonly property var rows: clock ? clock.rows : []
+  // What a card shows for the instant between the list shrinking and the
+  // delegate going: nothing, rather than undefined.
+  readonly property var emptyRow: ({ name: "", city: "", zone: "", ready: false, isDay: true, t: 0.5, sentence: "",
+    call: "good", callWords: "", timeText: "", dayLabel: "", offsetWords: "", awake: false })
+  readonly property var emptyEntry: ({ kind: "person", name: "", place: "", time: "" })
   readonly property string scrubWords: clock ? clock.scrubWords : ""
   readonly property bool scrubbing: clock ? clock.scrubMinutes !== 0 : false
   readonly property var rules: clock ? clock.rules : Model.bandRules("explorer")
@@ -93,8 +101,8 @@ Item {
   property bool showGlobe: false
   property real globeLat: 25
   property real globeLon: -90
-  Behavior on globeLon { enabled: !root.globeDragging; NumberAnimation { duration: 500; easing.type: Easing.OutCubic } }
-  Behavior on globeLat { enabled: !root.globeDragging; NumberAnimation { duration: 500; easing.type: Easing.OutCubic } }
+  Behavior on globeLon { enabled: !root.globeDragging; NumberAnimation { id: lonSpin; duration: 500; easing.type: Easing.OutCubic } }
+  Behavior on globeLat { enabled: !root.globeDragging; NumberAnimation { id: latSpin; duration: 500; easing.type: Easing.OutCubic } }
   property bool globeDragging: false
   property int pickedSpot: -1
   property bool globeAtHome: false
@@ -112,9 +120,10 @@ Item {
   // no home to centre on; when home turns up it goes there and picks it.
   onSpotsChanged: {
     if (!showGlobe || globeAtHome || spots.length === 0 || spots[0].kind !== "home") return
+    var wasDragging = globeDragging
     globeDragging = true
     centreGlobeOnHome()
-    globeDragging = false
+    globeDragging = wasDragging
     pickedSpot = 0
     if (clock && typeof clock.requestZones === "function") clock.requestZones(spotZones())
   }
@@ -229,7 +238,7 @@ Item {
 
   // Save some settings onto the plugin's entry, keeping the rest.
   function persistSettings(values) {
-    if (!clock) return false
+    if (!clock || !values || typeof values !== "object" || Array.isArray(values)) return false
     var entry = { id: pluginId }
     var current = clock.config || {}
     for (var k in current) if (k !== "id") entry[k] = current[k]
@@ -270,8 +279,8 @@ Item {
   }
 
   function acceptName() {
-    if (draftName.replace(/^\s+|\s+$/g, "") === "") return
-    draftName = draftName.replace(/^\s+|\s+$/g, "")
+    if (draftName.trim() === "") return
+    draftName = draftName.trim()
     draftWhere = ""
     peopleMode = "place"
     focusEditField()
@@ -295,6 +304,7 @@ Item {
   }
 
   function savePlace(whereKey) {
+    if (!clock) return
     if (placeFor === "home") persistSettings({ homeCity: whereKey })
     else persistSettings({ people: Model.addPerson(clock.peopleText, draftName, whereKey) })
     backToList()
@@ -309,11 +319,12 @@ Item {
   function editAccept() {
     if (peopleMode === "name") { acceptName(); return }
     if (matches.length > 0) pickMatch(matchIndex)
-    else if (draftWhere.indexOf("/") !== -1) savePlace(draftWhere.replace(/^\s+|\s+$/g, ""))
+    else if (Model.isZone(draftWhere)) savePlace(draftWhere.trim())
   }
 
   // Straight from a name and a place, for a script or a test.
   function addPerson(name, where) {
+    if (!clock || typeof name !== "string" || typeof where !== "string") return false
     return persistSettings({ people: Model.addPerson(clock.peopleText, name, where) })
   }
 
@@ -383,6 +394,10 @@ Item {
     var ready = readyPeople()
     if (ready.length === 0) return
     clock.resetScrub()
+    showMap = false
+    showGlobe = false
+    showTheme = false
+    showPeople = false
     roundIndex = 0
     beginRound(ready[0])
     playing = true
@@ -419,12 +434,9 @@ Item {
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
-  function close() {
-    root.opened = false
-  }
-
-  function dismiss() {
-    root.opened = false
+  // Every way out lands on the clock next time: the shell's own hide (the
+  // bar chip, a keybinding built on toggle) as much as Escape or Close.
+  function resetViews() {
     root.stopGame()
     root.showMap = false
     root.showPeople = false
@@ -432,6 +444,15 @@ Item {
     root.showTheme = false
     root.peopleMode = "list"
     if (root.clock) root.clock.resetScrub()
+  }
+
+  function close() {
+    root.opened = false
+    root.resetViews()
+  }
+
+  function dismiss() {
+    root.close()
     if (root.shell && typeof root.shell.hide === "function") root.shell.hide(root.pluginId)
   }
 
@@ -466,7 +487,7 @@ Item {
       anchors.fill: parent
       radius: root.cornerRadius
       color: sky.isDay ? root.daySky : root.nightSky
-      Behavior on color { ColorAnimation { duration: 500 } }
+      Behavior on color { ColorAnimation { duration: 160 } }
     }
 
     Shape {
@@ -755,9 +776,10 @@ Item {
         visible: root.scrubWords !== ""
         textFormat: Text.PlainText
         text: root.scrubWords + "."
-        color: root.sunColor
+        color: root.foreground
         font.family: root.fontFamily
         font.pixelSize: Style.font.title
+        font.bold: true
         wrapMode: Text.WordWrap
       }
     }
@@ -883,7 +905,8 @@ Item {
       width: Style.space(60)
       height: width
       radius: width / 2
-      color: Util.alpha(root.foreground, turnPress.pressed ? 0.18 : (turnPress.containsMouse ? 0.12 : 0.07))
+      color: turnPress.pressed ? Style.pressedFillFor(root.foreground, root.sunColor)
+        : (turnPress.containsMouse ? Style.hoverFillFor(root.foreground, root.sunColor) : Util.alpha(root.foreground, 0.07))
       border.width: Math.max(1, Style.space(1))
       border.color: Util.alpha(root.foreground, 0.2)
       Behavior on color { ColorAnimation { duration: 120 } }
@@ -913,7 +936,7 @@ Item {
       text: turnButton.caption
       color: root.quiet
       font.family: root.fontFamily
-      font.pixelSize: Style.font.caption
+      font.pixelSize: Style.font.body
     }
   }
 
@@ -935,7 +958,7 @@ Item {
     readonly property real cy: height / 2
     readonly property string dotsPath: Model.globeDotsPath(dots, lat0, lon0, r, cx, cy, Math.max(2, r * 0.017))
     readonly property string nightPath: Model.globeNightPath(root.shownMs, lat0, lon0, r, cx, cy, 48)
-    readonly property var markers: Model.globeMarkers(spots, lat0, lon0, r, cx, cy)
+    readonly property var basis: Model.globeBasis(lat0, lon0)
     readonly property var sunSpot: {
       var sun = Model.subsolarPoint(root.shownMs)
       return Model.globeProject(sun.lat, sun.lon, Model.globeBasis(lat0, lon0), r, cx, cy)
@@ -1015,19 +1038,26 @@ Item {
       }
     }
 
+    // One delegate per place for the life of the view: it projects itself
+    // as the globe turns, hides round the back, and stacks by depth, so a
+    // spin never tears the markers down or drops a hover.
     Repeater {
-      model: globe.markers
+      model: globe.spots.length
 
       Item {
         id: marker
-        required property var modelData
-        readonly property var spot: modelData.spot
-        readonly property bool isPicked: globe.picked === modelData.index
+        required property int index
+        readonly property var spot: globe.spots[index] || ({ kind: "spot", name: "", place: "", lat: 0, lon: 0 })
+        readonly property var at: Model.globeProject(spot.lat, spot.lon, globe.basis, globe.r, globe.cx, globe.cy)
+        readonly property real depth: at.depth
+        visible: depth > 0.04
+        z: depth
+        readonly property bool isPicked: globe.picked === index
         readonly property bool named: spot.kind !== "spot"
-        readonly property real dotSize: Style.space((spot.kind === "spot" ? 9 : 12) + 5 * modelData.depth + (isPicked ? 4 : 0))
-        readonly property bool flip: modelData.x > globe.width * 0.62
-        x: modelData.x
-        y: modelData.y
+        readonly property real dotSize: Style.space((spot.kind === "spot" ? 9 : 12) + 5 * Math.max(0, depth) + (isPicked ? 4 : 0))
+        readonly property bool flip: at.x > globe.width * 0.62
+        x: at.x
+        y: at.y
 
         Rectangle {
           visible: marker.isPicked
@@ -1055,11 +1085,11 @@ Item {
         MouseArea {
           id: markerArea
           anchors.centerIn: parent
-          width: Math.max(marker.dotSize, Style.space(28))
+          width: Math.max(marker.dotSize, Style.space(40))
           height: width
           hoverEnabled: true
           cursorShape: Qt.PointingHandCursor
-          onClicked: globe.spotPicked(marker.modelData.index)
+          onClicked: globe.spotPicked(marker.index)
         }
 
         Rectangle {
@@ -1097,7 +1127,7 @@ Item {
     fontFamily: root.fontFamily
     fontSize: compact ? Style.font.body : Style.font.title
     horizontalPadding: compact ? Style.spacing.xl : Style.space(18)
-    verticalPadding: compact ? Style.spacing.sm : Style.space(10)
+    verticalPadding: compact ? Style.spacing.md : Style.space(10)
     opacity: enabled ? 1 : 0.4
     Behavior on opacity { NumberAnimation { duration: 120 } }
   }
@@ -1194,7 +1224,7 @@ Item {
           } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
             if (root.playing) {
               if (root.solved) root.nextRound()
-            } else {
+            } else if (toolbar.onClock) {
               root.startGame()
             }
             event.accepted = true
@@ -1242,7 +1272,9 @@ Item {
               anchors.right: parent.right
               anchors.top: parent.top
               anchors.bottom: parent.bottom
-              width: visible ? height : 0
+              // A fixed width, so the header's wrap does not feed the face
+              // which feeds the header's width which feeds its wrap.
+              width: visible ? content.homeSkyHeight + content.gap + Math.round(Style.font.displayLarge * 1.3) : 0
               minutesOfDay: root.home ? root.home.minutesOfDay : 0
 
               MouseArea {
@@ -1286,32 +1318,47 @@ Item {
             readonly property real cardW: (width - spacing * (count - 1)) / count
 
             Repeater {
-              model: root.rows
+              model: root.rows.length
 
               Rectangle {
-                required property var modelData
+                id: personCard
+                required property int index
+                readonly property var row: root.rows[index] || root.emptyRow
+                // Five or six cards on the navigator band leave 150 px each:
+                // the type steps down, the separators shrink, and the call
+                // words and the offset take a line each, so nothing is
+                // elided to nonsense.
+                // Three cards have room for everything; four lose the day
+                // label from the place line and split the call words from
+                // the offset; five or six also step the type down.
+                readonly property int squeeze: peopleRow.count >= 5 ? 2 : (peopleRow.count === 4 ? 1 : 0)
+                readonly property bool dense: squeeze === 2
+                readonly property string dot: squeeze === 2 ? " " : (squeeze === 1 ? " · " : "  ·  ")
                 width: peopleRow.cardW
                 height: peopleRow.height
                 radius: root.cornerRadius
+                clip: true
                 color: Util.alpha(root.foreground, 0.04)
                 border.width: Math.max(1, Style.space(1))
                 border.color: Util.alpha(root.foreground, 0.12)
 
                 Column {
+                  id: cardColumn
                   anchors.fill: parent
                   anchors.margins: Style.spacing.lg
                   spacing: Style.spacing.sm
 
                   Row {
+                    id: cardHead
                     width: parent.width
                     spacing: Style.spacing.sm
                     Text {
                       width: parent.width - stateDot.width - Style.spacing.sm
                       textFormat: Text.PlainText
-                      text: modelData.name
+                      text: personCard.row.name
                       color: root.foreground
                       font.family: root.fontFamily
-                      font.pixelSize: Style.font.display
+                      font.pixelSize: personCard.dense ? Style.font.heading : Style.font.display
                       font.bold: true
                       elide: Text.ElideRight
                     }
@@ -1321,43 +1368,51 @@ Item {
                       width: Style.space(14)
                       height: width
                       radius: width / 2
-                      color: modelData.call === "good" ? root.goodDot : (modelData.call === "busy" ? root.busyDot : root.asleepDot)
-                      Behavior on color { ColorAnimation { duration: 400 } }
+                      color: personCard.row.call === "good" ? root.goodDot : (personCard.row.call === "busy" ? root.busyDot : root.asleepDot)
+                      Behavior on color { ColorAnimation { duration: 160 } }
                     }
                   }
 
                   Text {
+                    id: cardPlace
                     width: parent.width
                     textFormat: Text.PlainText
-                    text: modelData.city + (modelData.timeText !== "" ? "  ·  " + modelData.timeText : "")
-                      + (modelData.dayLabel !== "" && modelData.dayLabel !== "today" ? "  ·  " + modelData.dayLabel : "")
+                    text: personCard.row.city + (personCard.row.timeText !== "" ? personCard.dot + personCard.row.timeText : "")
+                      + (personCard.squeeze === 0 && personCard.row.dayLabel !== "" && personCard.row.dayLabel !== "today" ? personCard.dot + personCard.row.dayLabel : "")
                     color: root.quiet
                     font.family: root.fontFamily
-                    font.pixelSize: Style.font.title
+                    font.pixelSize: personCard.dense ? Style.font.body : Style.font.title
                     elide: Text.ElideRight
                   }
 
+                  // The sky takes whatever the words leave, so the last line
+                  // never runs under the card's edge.
                   Sky {
                     width: parent.width
-                    height: Math.max(Style.space(72), Math.round(peopleRow.height * 0.30))
-                    isDay: modelData.isDay
-                    t: modelData.t
+                    height: Math.max(Style.space(56), cardColumn.height - cardHead.height - cardPlace.height - cardState.height
+                      - cardSentence.height - cardColumn.spacing * 4
+                      - (cardCall.visible ? cardCall.height + cardColumn.spacing : 0)
+                      - (cardOffset.visible ? cardOffset.height + cardColumn.spacing : 0))
+                    isDay: personCard.row.isDay
+                    t: personCard.row.t
                     bodySize: Style.space(30)
                   }
 
                   Text {
+                    id: cardState
                     width: parent.width
                     textFormat: Text.PlainText
-                    text: modelData.ready ? (modelData.awake ? "Awake" : "Asleep") : "..."
+                    text: personCard.row.ready ? (personCard.row.awake ? "Awake" : "Asleep") : "..."
                     color: root.foreground
                     font.family: root.fontFamily
-                    font.pixelSize: Style.font.display
+                    font.pixelSize: personCard.dense ? Style.font.heading : Style.font.display
                   }
 
                   Text {
+                    id: cardSentence
                     width: parent.width
                     textFormat: Text.PlainText
-                    text: modelData.sentence
+                    text: personCard.row.sentence
                     color: root.quiet
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.body
@@ -1367,14 +1422,27 @@ Item {
                   }
 
                   Text {
+                    id: cardCall
                     width: parent.width
-                    visible: modelData.ready
+                    visible: personCard.row.ready
                     textFormat: Text.PlainText
-                    text: modelData.callWords + (modelData.offsetWords !== "" ? "  ·  " + modelData.offsetWords : "")
-                    color: modelData.call === "good" ? root.sunColor : root.quiet
+                    text: personCard.row.callWords + (personCard.squeeze === 0 && personCard.row.offsetWords !== "" ? personCard.dot + personCard.row.offsetWords : "")
+                    color: personCard.row.call === "good" ? root.sunColor : root.quiet
                     font.family: root.fontFamily
-                    font.pixelSize: Style.font.subtitle
-                    font.bold: modelData.call === "good"
+                    font.pixelSize: personCard.dense ? Style.font.body : Style.font.title
+                    font.bold: personCard.row.call === "good"
+                    elide: Text.ElideRight
+                  }
+
+                  Text {
+                    id: cardOffset
+                    width: parent.width
+                    visible: personCard.squeeze > 0 && personCard.row.ready && personCard.row.offsetWords !== ""
+                    textFormat: Text.PlainText
+                    text: personCard.row.offsetWords
+                    color: root.quiet
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
                     elide: Text.ElideRight
                   }
                 }
@@ -1461,23 +1529,25 @@ Item {
             visible: root.peopleMode === "list" || root.peopleMode === "remove"
             anchors.top: peopleSubtitle.bottom
             anchors.topMargin: content.gap * 2
+            anchors.bottom: parent.bottom
             width: parent.width
-            spacing: Style.spacing.sm
+            spacing: Style.spacing.xs
+            clip: true
 
             Repeater {
-              model: root.peopleEntries
+              model: root.peopleEntries.length
 
               Rectangle {
                 id: personRow
-                required property var modelData
                 required property int index
+                readonly property var modelData: root.peopleEntries[index] || root.emptyEntry
                 readonly property bool selected: root.peopleIndex === index
                 readonly property bool confirming: selected && root.peopleMode === "remove"
                 readonly property bool isPerson: modelData.kind === "person"
                 width: peopleList.width
-                height: Style.space(46)
+                height: Style.space(40)
                 radius: root.cornerRadius
-                color: Util.alpha(root.foreground, selected ? 0.10 : 0.04)
+                color: selected ? Color.menu.selectedBackground : Util.alpha(root.foreground, 0.04)
                 border.width: Math.max(1, Style.space(1))
                 border.color: selected ? Util.alpha(root.sunColor, 0.8) : Util.alpha(root.foreground, 0.10)
                 Behavior on color { ColorAnimation { duration: 120 } }
@@ -1533,7 +1603,7 @@ Item {
                     id: rowName
                     textFormat: Text.PlainText
                     text: personRow.confirming ? "Remove " + personRow.modelData.name + "?" : personRow.modelData.name
-                    color: personRow.confirming ? root.sunColor : root.foreground
+                    color: root.foreground
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.heading
                     font.bold: true
@@ -1629,6 +1699,7 @@ Item {
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.displayLarge
                 selectByMouse: true
+                maximumLength: 64
                 clip: true
                 text: root.peopleMode === "name" ? root.draftName : root.draftWhere
                 onTextEdited: {
@@ -1658,7 +1729,7 @@ Item {
                 visible: editField.text === ""
                 textFormat: Text.PlainText
                 text: root.peopleMode === "name" ? "Grandma, Nana, Uncle Ken..." : "a town or a city"
-                color: Util.alpha(root.foreground, 0.35)
+                color: Util.alpha(root.foreground, 0.66)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.displayLarge
               }
@@ -1692,7 +1763,7 @@ Item {
                   width: parent.width
                   height: Style.space(40)
                   radius: root.cornerRadius
-                  color: Util.alpha(root.foreground, selected ? 0.12 : 0.04)
+                  color: selected ? Color.menu.selectedBackground : Util.alpha(root.foreground, 0.04)
                   border.width: Math.max(1, Style.space(1))
                   border.color: selected ? Util.alpha(root.sunColor, 0.8) : Util.alpha(root.foreground, 0.10)
 
@@ -1736,9 +1807,9 @@ Item {
                 visible: root.peopleMode === "place" && root.draftWhere.length >= 2 && root.matches.length === 0
                 width: parent.width
                 textFormat: Text.PlainText
-                text: root.draftWhere.indexOf("/") !== -1
+                text: Model.isZone(root.draftWhere)
                   ? "Save keeps it as a time zone."
-                  : "Nothing called that here yet."
+                  : "Nothing called that here yet. Try the nearest big city."
                 color: root.quiet
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.title
@@ -1768,7 +1839,10 @@ Item {
             spots: root.spots
             picked: root.pickedSpot
             onSpotPicked: function(index) { root.pickSpot(index) }
-            onDragChanged: function(dragging) { root.globeDragging = dragging }
+            onDragChanged: function(dragging) {
+              if (dragging) { lonSpin.stop(); latSpin.stop() }
+              root.globeDragging = dragging
+            }
             onTurned: function(dLat, dLon) {
               root.globeLat = Math.max(-75, Math.min(75, root.globeLat + dLat))
               root.globeLon = root.globeLon + dLon
@@ -1890,7 +1964,7 @@ Item {
             text: root.themeChanging
               ? "Changing to " + Model.themeTitle(root.themePending) + "..."
               : "The whole computer changes to match, and so does this clock. Right now it's " + (root.themeSlug !== "" ? Model.themeTitle(root.themeSlug) : "unknown") + "."
-            color: root.themeChanging ? root.sunColor : root.quiet
+            color: root.themeChanging ? root.foreground : root.quiet
             font.family: root.fontFamily
             font.pixelSize: Style.font.title
             wrapMode: Text.WordWrap
@@ -1902,7 +1976,7 @@ Item {
             anchors.topMargin: content.gap * 2
             width: parent.width
             spacing: Style.spacing.lg
-            readonly property int columns: 6
+            readonly property int columns: root.themes.length > 24 ? 8 : 6
             readonly property int tileWidth: Math.floor((width - spacing * (columns - 1)) / columns)
 
             Repeater {
@@ -1918,7 +1992,7 @@ Item {
                 Rectangle {
                   id: swatch
                   width: parent.width
-                  height: Style.space(64)
+                  height: Style.space(themeGrid.columns > 6 ? 52 : 64)
                   radius: root.cornerRadius
                   color: tile.modelData.background
                   border.width: tile.current ? Math.max(2, Style.space(3)) : Math.max(1, Style.space(1))
@@ -1954,7 +2028,7 @@ Item {
                   width: parent.width
                   textFormat: Text.PlainText
                   text: tile.modelData.title
-                  color: tile.current ? root.sunColor : root.foreground
+                  color: root.foreground
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.subtitle
                   font.bold: tile.current
@@ -2121,14 +2195,14 @@ Item {
             ActionButton {
               visible: root.showPeople && root.peopleMode === "name"
               primary: true
-              enabled: root.draftName.replace(/^\s+|\s+$/g, "") !== ""
+              enabled: root.draftName.trim() !== ""
               text: "Next  →"
               onClicked: root.editAccept()
             }
             ActionButton {
               visible: root.showPeople && root.peopleMode === "place"
               primary: true
-              enabled: root.matches.length > 0 || root.draftWhere.indexOf("/") !== -1
+              enabled: root.matches.length > 0 || Model.isZone(root.draftWhere)
               text: "Save"
               onClicked: root.editAccept()
             }

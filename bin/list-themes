@@ -2,10 +2,15 @@
 # One line per installed theme, for the Theme screen: folder name, then the
 # background, foreground, accent and mode from its colors.toml, tab-separated.
 # Your own themes in ~/.config/omarchy/themes come first, then Omarchy's.
+# Values are read as text only; tabs and line breaks inside them are dropped
+# so a line always has five cells, and the plugin keeps only lowercase folder
+# names with three hex colours.
 set -u
-pick() { sed -nE "s/^$2 *= *\"([^\"]+)\".*/\1/p" "$1" | head -1; }
+pick() { sed -nE "s/^$2 *= *[\"']?([^\"'#]*#?[^\"' ]*)[\"']?.*/\1/p" "$1" | head -1 | tr -d '\t\r\n'; }
 for dir in "$HOME"/.config/omarchy/themes/*/ "${OMARCHY_PATH:-/usr/share/omarchy}"/themes/*/; do
   file="$dir/colors.toml"
   [ -f "$file" ] || continue
-  printf '%s\t%s\t%s\t%s\t%s\n' "$(basename "$dir")" "$(pick "$file" background)" "$(pick "$file" foreground)" "$(pick "$file" accent)" "$(pick "$file" mode)"
+  name=$(basename "$dir")
+  case "$name" in *[![:print:]]*|*[[:space:]]*) continue ;; esac
+  printf '%s\t%s\t%s\t%s\t%s\n' "$name" "$(pick "$file" background)" "$(pick "$file" foreground)" "$(pick "$file" accent)" "$(pick "$file" mode)"
 done

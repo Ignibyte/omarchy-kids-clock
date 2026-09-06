@@ -21,11 +21,20 @@ var BANDS = {
 
 function bandRules(band) {
   var key = String(band || "").toLowerCase()
-  return BANDS[key] || BANDS.explorer
+  return Object.prototype.hasOwnProperty.call(BANDS, key) ? BANDS[key] : BANDS.explorer
 }
 
 function trim(value) {
-  return String(value === undefined || value === null ? "" : value).replace(/^\s+|\s+$/g, "")
+  return value === undefined || value === null ? "" : String(value).trim()
+}
+
+// A time zone the way tzdata names one: "Area/Place" or "Area/Sub/Place",
+// letters, digits, underscores, plus and minus. Anything else typed into
+// the place field is a name to look up, never something to hand to `date`.
+var ZONE_PATTERN = /^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+){1,2}$/
+function isZone(text) {
+  var t = trim(text)
+  return t.length <= 48 && ZONE_PATTERN.test(t)
 }
 
 // ---- settings
@@ -61,7 +70,7 @@ function setting(settings, key, fallback) {
 
 // "07:30" -> 450 minutes. Anything unreadable falls back.
 function parseClock(text, fallbackMinutes) {
-  var m = /^\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*$/i.exec(String(text || ""))
+  var m = /^(\d{1,2})(?::(\d{2}))? ?(am|pm)?$/i.exec(trim(text).replace(/\s+/g, " "))
   if (!m) return fallbackMinutes
   var hour = parseInt(m[1], 10)
   var minute = m[2] ? parseInt(m[2], 10) : 0
@@ -97,16 +106,26 @@ function normalizeKey(text) {
 function findCity(cities, query) {
   var raw = trim(query)
   if (raw === "" || !Array.isArray(cities)) return null
+  var whole = normalizeKey(raw)
   var comma = raw.indexOf(",")
   var q = normalizeKey(comma === -1 ? raw : raw.slice(0, comma))
   var qualifier = comma === -1 ? "" : normalizeKey(raw.slice(comma + 1))
-  var first = null
+  if (q === "") return null
+  // A qualifier names the region first and the country only when no region
+  // matched, so "Prague, Czechia" cannot land on another row of the same
+  // country. A name that carries its own comma is tried whole first.
+  var first = null, byCountry = null
   for (var i = 0; i < cities.length; i++) {
-    if (normalizeKey(cities[i].name) !== q && normalizeKey(cities[i].ascii) !== q) continue
+    var name = normalizeKey(cities[i].name)
+    var ascii = cities[i].ascii ? normalizeKey(cities[i].ascii) : null
+    if (comma !== -1 && (name === whole || ascii === whole)) return cities[i]
+    if (name !== q && ascii !== q) continue
     if (qualifier === "") return cities[i]
-    if (normalizeKey(cities[i].region) === qualifier || normalizeKey(cities[i].country) === qualifier) return cities[i]
+    if (normalizeKey(cities[i].region) === qualifier) return cities[i]
+    if (!byCountry && normalizeKey(cities[i].country) === qualifier) byCountry = cities[i]
     if (!first) first = cities[i]
   }
+  if (byCountry) return byCountry
   if (first) return first
   for (var j = 0; j < cities.length; j++) {
     var zone = String(cities[j].zone || "")
@@ -165,14 +184,26 @@ function searchCities(cities, query, limit) {
 
 // Every "Name=Where" pair in the setting, uncapped and unresolved, so the
 // People screen can list, remove and re-save entries it cannot place.
+// The setting is bounded: at most this many stored pairs, names and places
+// this long, separators and control characters swapped for spaces. A value
+// pasted or hand-edited past these limits is trimmed, never trusted.
+var MOST_PEOPLE_STORED = 32
+var LONGEST_NAME = 40
+var LONGEST_PLACE = 64
+
+function cleanField(value, longest) {
+  var text = value === undefined || value === null ? "" : String(value)
+  return trim(text.replace(/[;=\r\n\t\u0000-\u001f\u007f]/g, " ")).slice(0, longest)
+}
+
 function parsePeopleRaw(text) {
   var out = []
   var parts = String(text || "").split(/[;\n]+/)
-  for (var i = 0; i < parts.length; i++) {
+  for (var i = 0; i < parts.length && out.length < MOST_PEOPLE_STORED; i++) {
     var pair = parts[i].split("=")
     if (pair.length < 2) continue
-    var name = trim(pair[0])
-    var where = trim(pair.slice(1).join("="))
+    var name = cleanField(pair[0], LONGEST_NAME)
+    var where = cleanField(pair.slice(1).join("="), LONGEST_PLACE)
     if (name === "" || where === "") continue
     out.push({ name: name, where: where })
   }
@@ -181,8 +212,11 @@ function parsePeopleRaw(text) {
 
 function peopleString(entries) {
   var parts = []
-  for (var i = 0; i < entries.length; i++) {
-    parts.push(trim(entries[i].name).replace(/[;=]/g, " ") + "=" + trim(entries[i].where).replace(/[;=]/g, " "))
+  for (var i = 0; i < entries.length && parts.length < MOST_PEOPLE_STORED; i++) {
+    var name = cleanField(entries[i].name, LONGEST_NAME)
+    var where = cleanField(entries[i].where, LONGEST_PLACE)
+    if (name === "" || where === "") continue
+    parts.push(name + "=" + where)
   }
   return parts.join("; ")
 }
@@ -207,16 +241,16 @@ function removePerson(text, index) {
 function parsePeople(text, cities, maxPeople) {
   var out = []
   var parts = String(text || "").split(/[;\n]+/)
-  for (var i = 0; i < parts.length && out.length < maxPeople; i++) {
+  for (var i = 0; i < parts.length && i < MOST_PEOPLE_STORED * 2 && out.length < maxPeople; i++) {
     var pair = parts[i].split("=")
     if (pair.length < 2) continue
-    var name = trim(pair[0])
-    var where = trim(pair.slice(1).join("="))
+    var name = cleanField(pair[0], LONGEST_NAME)
+    var where = cleanField(pair.slice(1).join("="), LONGEST_PLACE)
     if (name === "" || where === "") continue
     var city = findCity(cities, where)
     if (city) {
       out.push({ name: name, city: city.name, zone: city.zone, lat: city.lat, lon: city.lon, known: true })
-    } else if (where.indexOf("/") !== -1) {
+    } else if (isZone(where)) {
       out.push({ name: name, city: where.split("/").pop().replace(/_/g, " "), zone: where, lat: null, lon: null, known: false })
     }
   }
@@ -234,9 +268,13 @@ function offsetCommand(zone, epochSeconds) {
 // argv for many zones at once, through bash: one line per zone,
 // "ZONE<TAB>+HH:MM<TAB>ABBR<TAB>weekday(1-7)". The tabs in the date format
 // are real tab characters, which date prints as they are.
+// A zone whose file tzdata does not have prints "unknown" instead of the
+// UTC that glibc would silently fall back to; each `date` is bounded by
+// `timeout` in case a zone name ever points at something that blocks.
 function offsetsCommand(zones, epochSeconds) {
-  var script = "for zone in \"$@\"; do printf '%s\\t' \"$zone\"; TZ=\"$zone\" /usr/bin/date --date=@"
-    + Math.floor(epochSeconds) + " '+%:z\t%Z\t%u' || echo; done"
+  var script = "dir=\"${TZDIR:-/usr/share/zoneinfo}\"; for zone in \"$@\"; do printf '%s\\t' \"$zone\"; "
+    + "if [ -f \"$dir/$zone\" ]; then TZ=\"$zone\" timeout 2 /usr/bin/date --date=@" + Math.floor(epochSeconds)
+    + " '+%:z\t%Z\t%u' || echo; else echo unknown; fi; done"
   return ["/usr/bin/bash", "-c", script, "kids-clock"].concat(zones || [])
 }
 
@@ -263,6 +301,7 @@ function parseOffset(text) {
 
 function parseOffsetLine(line) {
   var fields = String(line || "").split("\t")
+  if (trim(fields[0]) === "unknown") return { unknown: true }
   var offset = parseOffset(fields[0])
   if (offset === null) return null
   return { offsetSeconds: offset, abbreviation: trim(fields[1] || ""), weekday: parseInt(fields[2], 10) || 0 }
@@ -306,11 +345,18 @@ function dayLabel(homeDayIndex, thereDayIndex) {
 function offsetWords(offsetSeconds, homeOffsetSeconds) {
   var diff = offsetSeconds - homeOffsetSeconds
   if (diff === 0) return "same time as home"
-  var hours = Math.abs(diff) / 3600
-  var whole = Math.floor(hours)
-  var frac = hours - whole
-  var text = frac === 0 ? String(whole) : (frac === 0.5 ? (whole === 0 ? "half an" : whole + "½") : hours.toFixed(2))
-  var unit = (hours === 1 || text === "half an") ? " hour" : " hours"
+  // Real offsets come in quarter hours: Kathmandu is 5¾ ahead of Greenwich.
+  var quarters = Math.round(Math.abs(diff) / 900)
+  var whole = Math.floor(quarters / 4)
+  var rem = quarters % 4
+  var text, unit
+  if (whole === 0) {
+    text = rem === 2 ? "half an" : (rem === 1 ? "a quarter of an" : "three quarters of an")
+    unit = " hour"
+  } else {
+    text = whole + ["", "¼", "½", "¾"][rem]
+    unit = whole === 1 && rem === 0 ? " hour" : " hours"
+  }
   return text + unit + (diff > 0 ? " ahead" : " behind")
 }
 
@@ -327,7 +373,10 @@ function solarTimes(utcMs, lat, lon, offsetSeconds) {
   var localMidnight = Math.floor((utcMs + offsetSeconds * 1000) / MS_PER_DAY) * MS_PER_DAY - offsetSeconds * 1000
   var localNoon = localMidnight + MS_PER_DAY / 2
   var julianNoon = localNoon / MS_PER_DAY + 2440587.5
-  var n = Math.round(julianNoon - 2451545.0 + 0.0008)
+  // The day is picked so that the mean solar noon stays within twelve hours
+  // of local civil noon; without the longitude term, places east of 180°
+  // on UTC+13 (New Zealand on summer time) got the previous day's sun.
+  var n = Math.round(julianNoon + lon / 360 - 2451545.0)
   var meanSolar = n - lon / 360
   var anomaly = (357.5291 + 0.98560028 * meanSolar) % 360
   var center = 1.9148 * Math.sin(toRadians(anomaly)) + 0.0200 * Math.sin(toRadians(2 * anomaly)) + 0.0003 * Math.sin(toRadians(3 * anomaly))
@@ -365,6 +414,11 @@ function skyPosition(utcMs, times) {
   }
   if (utcMs < times.sunrise) {
     var previousSunset = times.sunset - MS_PER_DAY
+    if (utcMs <= previousSunset) {
+      // A sunset after midnight, as Reykjavík has in June: still yesterday's day.
+      var previousSunrise = times.sunrise - MS_PER_DAY
+      return { isDay: true, t: (utcMs - previousSunrise) / (previousSunset - previousSunrise) }
+    }
     return { isDay: false, t: (utcMs - previousSunset) / (times.sunrise - previousSunset) }
   }
   var nextSunrise = times.sunrise + MS_PER_DAY
@@ -388,11 +442,14 @@ function timeWords(minutesOfDay) {
 // "can I call?": good, busy or asleep.
 function activityAt(minutesOfDay, routine, weekend) {
   var m = minutesOfDay
-  if (m < routine.wake || m >= routine.bed) return { key: "asleep", label: "fast asleep", awake: false, call: "asleep" }
-  if (m < routine.wake + 45) return { key: "waking", label: "waking up and having breakfast", awake: true, call: "good" }
+  // A bedtime at or before the waking time is one after midnight.
+  var lateBed = routine.bed <= routine.wake
+  var asleep = lateBed ? (m >= routine.bed && m < routine.wake) : (m < routine.wake || m >= routine.bed)
+  if (asleep) return { key: "asleep", label: "fast asleep", awake: false, call: "asleep" }
+  if (m >= routine.wake && m < routine.wake + 45) return { key: "waking", label: "waking up and having breakfast", awake: true, call: "good" }
   if (!weekend && m >= routine.schoolStart && m < routine.schoolEnd) return { key: "school", label: "at school", awake: true, call: "busy" }
   if (m >= routine.dinner && m < routine.dinner + 45) return { key: "dinner", label: "having dinner", awake: true, call: "busy" }
-  if (m >= routine.bed - 45) return { key: "bedtime", label: "getting ready for bed", awake: true, call: "good" }
+  if (mod(routine.bed - m, 1440) <= 45) return { key: "bedtime", label: "getting ready for bed", awake: true, call: "good" }
   return { key: "playing", label: weekend ? "playing, it's the weekend" : "out of school and playing", awake: true, call: "good" }
 }
 
@@ -415,6 +472,10 @@ function personSentence(person, minutesOfDay, activity, label) {
 
 // Everything a card needs, for one person at one instant.
 function buildRow(person, offsetInfo, utcMs, home, routine, rules, hourFormat) {
+  if (offsetInfo && offsetInfo.unknown) {
+    return { name: person.name, city: person.city, zone: person.zone, ready: false, unknown: true, isDay: true, t: 0.5,
+      sentence: person.city + " is not a place this clock knows. Try the nearest big city.", call: "good", callWords: "", timeText: "", dayLabel: "", offsetWords: "" }
+  }
   var offset = offsetInfo ? offsetInfo.offsetSeconds : null
   if (offset === null || offset === undefined) {
     return { name: person.name, city: person.city, zone: person.zone, ready: false, isDay: true, t: 0.5,
@@ -466,9 +527,13 @@ function buildHome(city, lat, lon, offsetSeconds, utcMs, rules, hourFormat) {
 // The banner while the child moves the sun: "Pretend it's 3 hours later".
 function scrubWords(scrubMinutes) {
   if (!scrubMinutes) return ""
-  var hours = Math.abs(scrubMinutes) / 60
-  var text = hours === Math.floor(hours) ? String(hours) : hours.toFixed(1)
-  return "Pretend it's " + text + (hours === 1 ? " hour " : " hours ") + (scrubMinutes > 0 ? "later" : "earlier")
+  var total = Math.abs(scrubMinutes)
+  var hours = Math.floor(total / 60)
+  var minutes = total % 60
+  var parts = []
+  if (hours > 0) parts.push(hours + (hours === 1 ? " hour" : " hours"))
+  if (minutes > 0) parts.push(minutes + (minutes === 1 ? " minute" : " minutes"))
+  return "Pretend it's " + parts.join(" ") + (scrubMinutes > 0 ? " later" : " earlier")
 }
 
 function tooltip(rows) {
@@ -522,14 +587,16 @@ function clockWords(minutesOfDay) {
   if (minute === 15) return "quarter past " + hour
   if (minute === 30) return "half past " + hour
   if (minute === 45) return "quarter to " + next
-  if (minute < 30) return (MINUTE_WORDS[minute] || minute + " minutes") + " past " + hour
+  if (minute < 30) return (MINUTE_WORDS[minute] || minute + (minute === 1 ? " minute" : " minutes")) + " past " + hour
   var to = 60 - minute
-  return (MINUTE_WORDS[to] || to + " minutes") + " to " + next
+  return (MINUTE_WORDS[to] || to + (to === 1 ? " minute" : " minutes")) + " to " + next
 }
 
 // "in the morning", "in the afternoon", "in the evening", "at night".
 function dayPartWords(minutesOfDay) {
-  var h = mod(minutesOfDay, 1440) / 60
+  var m = mod(minutesOfDay, 1440)
+  var h = m / 60
+  if (m === 720) return "at midday"
   if (h < 5) return "at night"
   if (h < 12) return "in the morning"
   if (h < 17) return "in the afternoon"
@@ -829,6 +896,10 @@ function globeMarkers(spots, lat0, lon0, r, cx, cy) {
 // moved there, the same honest guess the cards make.
 function spotView(spot, offsetInfo, utcMs, home, routine, rules, hourFormat) {
   var offset = offsetInfo ? offsetInfo.offsetSeconds : null
+  if (offsetInfo && offsetInfo.unknown) {
+    return { name: spot.name, where: spot.where || "", ready: false, isDay: true, t: 0.5,
+      sentence: spot.place + " is not a place this clock knows.", timeWords: "", timeText: "", dayLabel: "", offsetWords: "" }
+  }
   if (offset === null || offset === undefined) {
     return { name: spot.name, where: spot.where || "", ready: false, isDay: true, t: 0.5,
       sentence: "Finding the time in " + spot.place + "...", timeWords: "", timeText: "", dayLabel: "", offsetWords: "" }
@@ -870,12 +941,18 @@ function themeTitle(slug) {
   }).join(" ")
 }
 
+var THEME_SLUG = /^[a-z0-9][a-z0-9._-]*$/
+var THEME_COLOUR = /^#[0-9a-fA-F]{3,8}$/
+
+// A theme folder is trusted only as far as it parses: a lowercase slug the
+// theme switch would accept, and three hex colours for the swatch.
 function parseThemeLines(text) {
   var out = []
   var lines = String(text || "").split("\n")
   for (var i = 0; i < lines.length; i++) {
     var cells = lines[i].split("\t")
-    if (cells.length < 4 || cells[0] === "") continue
+    if (cells.length < 4 || !THEME_SLUG.test(cells[0])) continue
+    if (!THEME_COLOUR.test(cells[1]) || !THEME_COLOUR.test(cells[2]) || !THEME_COLOUR.test(cells[3])) continue
     out.push({ slug: cells[0], title: themeTitle(cells[0]), background: cells[1], foreground: cells[2],
       accent: cells[3], light: (cells[4] || "").trim() === "light" })
   }
@@ -930,6 +1007,8 @@ if (typeof module !== "undefined") {
     cityLabel: cityLabel,
     searchCities: searchCities,
     parsePeopleRaw: parsePeopleRaw,
+    isZone: isZone,
+    cleanField: cleanField,
     peopleString: peopleString,
     addPerson: addPerson,
     removePerson: removePerson,

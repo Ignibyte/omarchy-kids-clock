@@ -39,7 +39,7 @@ The age band is a parent setting. Each band adds to the one before.
 | Band | Ages | What is on screen |
 |---|---|---|
 | explorer | 3 to 5 | home and up to three people; sun, moon and words only; no digits |
-| tinkerer | 5 to 7 | adds the digital time, the analog face, "tomorrow" or "yesterday", and the set-the-clock game in quarter hours |
+| tinkerer | 5 to 7 | adds the digital time, the analog face, "tomorrow" or "yesterday", up to four people, and the set-the-clock game in quarter hours |
 | navigator | 8 to 10 | adds the world map with the night side, "3 hours ahead", up to six people; the game works in five minutes |
 
 ![The Tinkerer face: the digits, the analog face and the day labels](preview-tinkerer.png)
@@ -83,11 +83,14 @@ whole lesson.
 
 ![The map on the Navigator face](preview-map.png)
 
-The land outlines are Natural Earth 1:110m, which is public domain, rounded
-to a tenth of a degree in `data/land.json`. The places in `data/cities.json`
-are Natural Earth's populated places, also public domain: every place over
-300,000 people, every capital, plus a few carried over from the first list,
-each with its time zone.
+The land outlines are Natural Earth 1:110m Land, which is public domain,
+rounded to a tenth of a degree in `data/land.json`. The places in
+`data/cities.json` are from Natural Earth 1:10m Populated Places, also public
+domain: every place over 300,000 people and every capital, about 1,460 in
+all, each with a time zone checked against tzdata's own country table rather
+than taken from Natural Earth, whose zone column is wrong for some twenty
+places. `data/SOURCES.md` records the products, the filters and the
+corrections.
 
 ## Install
 
@@ -96,20 +99,43 @@ omarchy plugin add https://github.com/Ignibyte/omarchy-kids-clock.git
 omarchy plugin enable ignibyte.kids-clock right
 ```
 
-The plugin lands disabled so you can read the code first. Omarchy plugins run
-unsandboxed inside `omarchy-shell` with your permissions. This one runs
-`date` and `timedatectl`, reads its own `data/` files, lists the theme
-folders with `bin/list-themes`, and runs `omarchy-theme-set` when a theme is
-tapped. It makes no network requests and writes nothing outside
-`~/.config/omarchy/shell.json`, where Omarchy keeps every plugin's settings,
-apart from what a theme switch itself writes.
+The plugin lands disabled so you can read the code first. It needs nothing
+beyond an Omarchy 4 install: `bash`, GNU `date`, `timedatectl` and
+`omarchy-theme-set` are all there already, and `node` is only for the test.
+
+### Removing
+
+```bash
+omarchy plugin disable ignibyte.kids-clock
+omarchy plugin remove ignibyte.kids-clock
+```
+
+Disabling drops the plugin's entry from `~/.config/omarchy/shell.json`, and
+with it every name and place entered on the People screen; note them first if
+you want them back.
+
+### What it touches
+
+Omarchy plugins run unsandboxed inside `omarchy-shell` with your permissions.
+This one runs `bash` (for `bin/list-themes` and a one-line loop that asks
+`date` for each zone's offset), `timedatectl` for the system zone,
+`omarchy-shell` from the bar chip to open the big clock, and
+`omarchy-theme-set` when a theme tile is tapped. It reads its own `data/`
+files, the current theme's name in `~/.local/state/omarchy/current/`, and each
+theme's `colors.toml` under `~/.config/omarchy/themes` and
+`/usr/share/omarchy/themes`. It makes no network requests of its own. The only
+thing it writes is its own entry in `~/.config/omarchy/shell.json`, through
+the shell's own save call, when someone adds or removes a person or picks
+home. A theme switch is Omarchy's own pipeline and does whatever it does on
+your machine, including reaching the network for editors that take extensions.
+There is no lock on the People or Theme screens: a child can reach them too.
 
 ## Adding people
 
 Press People in the big clock. The People screen lists home and everyone the
 clock shows, with where they live and their time. "Add someone" asks two
 questions: what the child calls them, and where they live. Type a few
-letters of the town or city and pick it from the matches; about 1,500
+letters of the town or city and pick it from the matches; about 1,460
 places are built in, and a name shared by several places, such as Portland,
 is stored with its region so it comes back as itself. A place that is not
 in the list can be given as a time zone, such as `America/Phoenix`. Each
@@ -130,14 +156,14 @@ screen, the settings are edited on the command line or in the plugin's entry
 in `~/.config/omarchy/shell.json`:
 
 ```bash
-omarchy-shell shell setBarWidget ignibyte.kids-clock band '"tinkerer"'
-omarchy-shell shell setBarWidget ignibyte.kids-clock people '"Grandma=Phoenix; Nana=Sydney"'
+omarchy-shell shell setBarWidget ignibyte.kids-clock band '"tinkerer"' '{}'
+omarchy-shell shell setBarWidget ignibyte.kids-clock people '"Grandma=Phoenix; Nana=Sydney"' '{}'
 ```
 
 | Key | Default | Meaning |
 |---|---|---|
 | `band` | `explorer` | `explorer`, `tinkerer` or `navigator` |
-| `people` | `Grandma=Phoenix; Cousin Mia=Berlin; Uncle Ken=Tokyo` | `Name=City` pairs separated by semicolons, which the People screen edits. Cities from the built-in list of about 1,500, `City, Region` when the name is shared, or any IANA zone such as `America/Phoenix`. An empty value shows nobody; a missing key shows these three examples |
+| `people` | `Grandma=Phoenix; Cousin Mia=Berlin; Uncle Ken=Tokyo` | `Name=City` pairs separated by semicolons, which the People screen edits. Cities from the built-in list of about 1,460, `City, Region` when the name is shared, or any IANA zone such as `America/Phoenix`; a zone tzdata does not know is reported as unknown rather than shown as UTC. Names up to 40 characters, places up to 64, at most 32 pairs kept. An empty value shows nobody; a missing key shows these three examples |
 | `homeCity` | blank | The city that matches the system time zone. Set it, or pick it on the People screen, when the system zone is a region rather than your town, so the sunrise is right |
 | `wakeTime`, `schoolStart`, `schoolEnd`, `dinnerTime`, `bedTime` | `07:00`, `08:30`, `15:00`, `18:00`, `20:00` | The family routine. "Uncle Ken is probably at school" means the child's own routine moved to Tokyo, which is honest and personal rather than a guess about another country |
 | `hourFormat` | `12` | `12` or `24`, for the bands that show digits |
@@ -187,7 +213,8 @@ omarchy-shell shell toggle ignibyte.kids-clock '{"view":"theme"}'
 One person at a time. Their time is frozen as the round starts and rounded
 to the band's step, and the words say it the way school does: "It's about
 quarter to three in the afternoon in Phoenix." The hands start at twelve in
-the same half of the day, like a toy clock reset, so the child sets the hour
+the same half of the day, like a toy clock reset (at nine when the answer is
+twelve itself), so the child sets the hour
 and then the minutes. The hour hand is geared to the minute hand, so half
 past shows it halfway to the next numeral, which is the thing children find
 hardest about a real clock.
@@ -200,8 +227,8 @@ the hands read right, the sky shows the other half of the day, and the hint
 says so.
 
 Four big round buttons under the face turn the hands five minutes or an
-hour either way. Start again puts them back to twelve, The clock leaves the
-game, and once the round is won a button names the next person. On a
+hour either way. Start again puts them back to where they began, Clock leaves
+the game, and once the round is won a button names the next person. On a
 keyboard, Left and Right turn the hands five minutes (one with Shift), Up
 and Down an hour, 0 resets them, Enter moves on and Escape leaves.
 
@@ -214,8 +241,8 @@ game's rounds and hints. QML's JavaScript has no time zone tables, so
 `Service.qml` asks `date` for the zones' offsets through one Quickshell
 process per batch. `Overlay.qml` draws the skies, the map and the globe with
 QtQuick Shapes (the map's land as one SVG path built from the data file, the
-globe's land as one path of small squares from `data/globe.json`, three
-thousand equal-area samples of the same coastlines, and the globe's night as
+globe's land as one path of small squares from `data/globe.json`, about three
+thousand equal-area samples of the same land, and the globe's night as
 the near half of the terminator closed along the rim) and the face from
 rotated rectangles, all bound to theme colours so they re-tint;
 `BarWidget.qml` is the chip.
@@ -223,8 +250,11 @@ rotated rectangles, all bound to theme colours so they re-tint;
 ## Part of Omarchy Kids
 
 A spoke of the community Kids Mode effort at
-[markcuda/omarchy-kids-mode](https://github.com/markcuda/omarchy-kids-mode).
-Started from Jason Fried's world clock plugin, which asks the grown-up
-version of the same question.
+[markcuda/omarchy-kids-mode](https://github.com/markcuda/omarchy-kids-mode),
+built and maintained by Ignibyte; issues and pull requests at
+[Ignibyte/omarchy-kids-clock](https://github.com/Ignibyte/omarchy-kids-clock).
+The idea began with Jason Fried's world clock, an unpublished Omarchy plugin
+he showed in August 2026, which asks the grown-up version of the same
+question; nothing here is derived from it.
 
 MIT.

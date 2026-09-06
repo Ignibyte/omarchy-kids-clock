@@ -97,13 +97,35 @@ Item {
     queue = next
     process.command = currentJob.command
     process.running = true
+    jobWatchdog.restart()
+  }
+
+  // A job that never exits (a process that failed to start, or one stuck
+  // behind something that blocks) would hold the queue for good; after half
+  // a minute it is dropped and the queue moves on.
+  Timer {
+    id: jobWatchdog
+    interval: 30000
+    repeat: false
+    onTriggered: {
+      if (!root.currentJob) return
+      console.warn("kids-clock: a zone lookup did not finish in time; moving on")
+      process.running = false
+      root.currentJob = null
+      root.runNext()
+    }
   }
 
   // One process for the whole list: fifty zones for the globe come back in
   // one go rather than one `date` at a time.
+  // Offsets are taken at the real instant, the same one home's offset comes
+  // from, so home and the people never sit on different sides of a
+  // daylight-saving change while the sun is being moved.
   function fetchOffsets(zones) {
-    if (!zones || zones.length === 0) return
-    root.enqueue(Model.offsetsCommand(zones, shownMs / 1000), function(exitCode, text) {
+    var wanted = []
+    for (var i = 0; i < (zones || []).length; i++) if (Model.isZone(zones[i])) wanted.push(String(zones[i]).trim())
+    if (wanted.length === 0) return
+    root.enqueue(Model.offsetsCommand(wanted, nowMs / 1000), function(exitCode, text) {
       var parsed = Model.parseOffsetLines(text)
       var updated = Object.assign({}, root.offsets)
       var any = false
@@ -126,8 +148,8 @@ Item {
     var next = extraZones.slice()
     var added = []
     for (var i = 0; i < (zones || []).length; i++) {
-      var zone = String(zones[i] || "")
-      if (zone === "" || next.indexOf(zone) !== -1) continue
+      var zone = String(zones[i] || "").trim()
+      if (!Model.isZone(zone) || next.indexOf(zone) !== -1) continue
       next.push(zone)
       added.push(zone)
     }
@@ -144,6 +166,7 @@ Item {
     // can land before the stream is drained.
     stdout: StdioCollector { id: output; waitForEnd: true }
     onExited: function(exitCode) {
+      jobWatchdog.stop()
       var job = root.currentJob
       root.currentJob = null
       if (job && job.callback) job.callback(exitCode, output.text)
