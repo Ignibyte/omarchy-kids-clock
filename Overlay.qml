@@ -10,10 +10,12 @@ import "Model.js" as Model
 // across the top with the sun or the moon on its arc, an analog face beside
 // the digits on the bands that read them, then a card for each person with
 // their own small sky, what they are probably doing, and whether it is a
-// good time to call. Left and right move the sun an hour; 0 comes back to
-// now; Enter opens the set-the-clock game; M swaps in the world map with
-// the night side on the band that reads maps; P opens the People screen
-// where a parent adds and removes the people shown; Escape closes.
+// good time to call. A row of buttons along the bottom does everything:
+// Earlier and Later move the sun an hour, Back to now undoes that, Set the
+// clock opens the game, The map swaps in the world with its night side on
+// the band that reads maps, People opens the screen where a parent adds and
+// removes the people shown, and Close closes. The keys do the same for
+// anyone at a keyboard: arrows, 0, Enter, M, P and Escape.
 Item {
   id: root
 
@@ -640,7 +642,7 @@ Item {
         width: parent.width
         visible: root.scrubWords !== ""
         textFormat: Text.PlainText
-        text: root.scrubWords + ". Press 0 to come back to now."
+        text: root.scrubWords + "."
         color: root.sunColor
         font.family: root.fontFamily
         font.pixelSize: Style.font.title
@@ -802,6 +804,23 @@ Item {
     }
   }
 
+  // A kit button with room for small hands: the shell's own Button on the
+  // menu tokens, so hover, press and the emphasised state follow the theme.
+  // `primary` paints the one thing to press next in the kit's selected state.
+  component ActionButton: Button {
+    property bool primary: false
+    property bool compact: false
+    bordered: true
+    selected: primary
+    foreground: root.foreground
+    fontFamily: root.fontFamily
+    fontSize: compact ? Style.font.body : Style.font.title
+    horizontalPadding: compact ? Style.spacing.xl : Style.space(18)
+    verticalPadding: compact ? Style.spacing.sm : Style.space(10)
+    opacity: enabled ? 1 : 0.4
+    Behavior on opacity { NumberAnimation { duration: 120 } }
+  }
+
   PanelWindow {
     id: panel
     visible: root.opened
@@ -918,7 +937,7 @@ Item {
           id: clockView
           visible: !root.playing && !root.showMap && !root.showPeople
           anchors.fill: parent
-          anchors.bottomMargin: hint.height + content.gap
+          anchors.bottomMargin: toolbar.height + content.gap
 
           // Home: the sentence, the digits when the band allows them, the
           // sky, and on the bands that read digits an analog face at the
@@ -1081,7 +1100,7 @@ Item {
           id: mapView
           visible: !root.playing && root.showMap && !root.showPeople
           anchors.fill: parent
-          anchors.bottomMargin: hint.height + content.gap
+          anchors.bottomMargin: toolbar.height + content.gap
 
           HomeHeader {
             id: mapHeader
@@ -1109,7 +1128,7 @@ Item {
             anchors.topMargin: content.gap
             width: parent.width
             textFormat: Text.PlainText
-            text: "The shaded part of the world is having its night. The sun is straight overhead at the little sun, and under the moon it is the middle of the night. The arrow keys move them."
+            text: "The shaded part of the world is having its night. The sun is straight overhead at the little sun, and under the moon it is the middle of the night. Earlier and later move them."
             color: root.quiet
             font.family: root.fontFamily
             font.pixelSize: Style.font.body
@@ -1122,7 +1141,7 @@ Item {
           id: peopleView
           visible: !root.playing && root.showPeople
           anchors.fill: parent
-          anchors.bottomMargin: hint.height + content.gap
+          anchors.bottomMargin: toolbar.height + content.gap
 
           Text {
             id: peopleTitle
@@ -1176,7 +1195,9 @@ Item {
 
                 MouseArea {
                   anchors.fill: parent
+                  hoverEnabled: true
                   cursorShape: Qt.PointingHandCursor
+                  onEntered: if (root.peopleMode === "list") root.peopleIndex = personRow.index
                   onClicked: root.activateRow(personRow.index)
                 }
 
@@ -1231,7 +1252,7 @@ Item {
                   Text {
                     width: Math.max(0, rowWords.width - rowName.width - rowWords.spacing)
                     textFormat: Text.PlainText
-                    text: personRow.confirming ? "Enter  yes     Esc  no" : personRow.modelData.place
+                    text: personRow.modelData.place
                     color: personRow.confirming ? root.foreground : root.quiet
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.title
@@ -1254,41 +1275,27 @@ Item {
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.title
                   }
-                  Text {
+                  ActionButton {
                     visible: personRow.isPerson && !personRow.confirming
-                    textFormat: Text.PlainText
-                    text: "remove"
-                    color: removeHover.containsMouse ? root.sunColor : Util.alpha(root.foreground, 0.45)
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.subtitle
-                    font.underline: removeHover.containsMouse
-                    MouseArea {
-                      id: removeHover
-                      anchors.fill: parent
-                      anchors.margins: -Style.spacing.sm
-                      hoverEnabled: true
-                      cursorShape: Qt.PointingHandCursor
-                      onClicked: root.askRemoveAt(personRow.index)
-                    }
+                    anchors.verticalCenter: parent.verticalCenter
+                    compact: true
+                    text: "Remove"
+                    onClicked: root.askRemoveAt(personRow.index)
                   }
-                  Text {
+                  ActionButton {
                     visible: personRow.confirming
-                    textFormat: Text.PlainText
-                    text: "yes"
-                    color: root.sunColor
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.heading
-                    font.bold: true
-                    MouseArea { anchors.fill: parent; anchors.margins: -Style.spacing.sm; cursorShape: Qt.PointingHandCursor; onClicked: root.confirmRemove() }
+                    anchors.verticalCenter: parent.verticalCenter
+                    compact: true
+                    primary: true
+                    text: "Yes, remove"
+                    onClicked: root.confirmRemove()
                   }
-                  Text {
+                  ActionButton {
                     visible: personRow.confirming
-                    textFormat: Text.PlainText
-                    text: "no"
-                    color: root.foreground
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.heading
-                    MouseArea { anchors.fill: parent; anchors.margins: -Style.spacing.sm; cursorShape: Qt.PointingHandCursor; onClicked: root.peopleMode = "list" }
+                    anchors.verticalCenter: parent.verticalCenter
+                    compact: true
+                    text: "No"
+                    onClicked: root.peopleMode = "list"
                   }
                 }
               }
@@ -1372,7 +1379,7 @@ Item {
               width: parent.width
               textFormat: Text.PlainText
               text: root.peopleMode === "name"
-                ? "The name the child uses. Enter when it is right."
+                ? "The name the child uses."
                 : "Type a few letters and pick the place. If it is not here, try the nearest big city, or a time zone such as America/Phoenix."
               color: root.quiet
               font.family: root.fontFamily
@@ -1441,7 +1448,7 @@ Item {
                 width: parent.width
                 textFormat: Text.PlainText
                 text: root.draftWhere.indexOf("/") !== -1
-                  ? "Enter keeps it as a time zone."
+                  ? "Save keeps it as a time zone."
                   : "Nothing called that here yet."
                 color: root.quiet
                 font.family: root.fontFamily
@@ -1452,12 +1459,12 @@ Item {
         }
 
         // ---- the game: the face on the left, the words and the sky on the
-        // right, and four big buttons for anyone not on the keyboard.
+        // right, and four big buttons that turn the hands.
         Item {
           id: gameArea
           visible: root.playing
           anchors.fill: parent
-          anchors.bottomMargin: hint.height + content.gap
+          anchors.bottomMargin: toolbar.height + content.gap
           readonly property int faceSize: Math.min(height, Math.round(width * 0.46))
 
           Face {
@@ -1536,11 +1543,9 @@ Item {
 
             Text {
               width: parent.width
+              visible: text !== ""
               textFormat: Text.PlainText
-              text: !root.game ? ""
-                : (root.solved
-                  ? (root.nextName === root.currentRound.name ? "Press Enter to play again." : "Press Enter for " + root.nextName + "'s clock.")
-                  : root.game.hint)
+              text: !root.game || root.solved ? "" : root.game.hint
               color: root.solved ? root.sunColor : root.foreground
               font.family: root.fontFamily
               font.pixelSize: Style.font.heading
@@ -1558,27 +1563,69 @@ Item {
           }
         }
 
-        Text {
-          id: hint
-          anchors.bottom: parent.bottom
+        // ---- the buttons: what can be done from here on the left, Close on
+        // the right. Only the buttons that mean something now are shown.
+        Item {
+          id: toolbar
+          anchors.left: parent.left
           anchors.right: parent.right
-          textFormat: Text.PlainText
-          text: root.playing
-            ? "←  →  five minutes     ↑  ↓  an hour     Enter  next     Esc  back to the clock"
-            : (root.showPeople
-              ? (root.peopleMode === "list" || root.peopleMode === "remove"
-                ? "↑  ↓  choose     Enter  open     Delete  remove     Esc  back to the clock"
-                : (root.peopleMode === "name" ? "Enter  next     Esc  back" : "↑  ↓  choose a place     Enter  save     Esc  back"))
-              : (root.showMap
-                ? "←  →  move the sun     M  the clock     P  people     0  now     Esc  close"
-                : (root.hasMap
-                  ? "←  →  move the sun     Enter  set the clock     M  the map     P  people     0  now     Esc  close"
-                  : (root.hasFace
-                    ? "←  →  move the sun     Enter  set the clock     P  people     0  now     Esc  close"
-                    : "←  →  move the sun     P  people     0  now     Esc  close"))))
-          color: Util.alpha(root.foreground, 0.4)
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
+          anchors.bottom: parent.bottom
+          height: Math.max(actions.implicitHeight, closeButton.implicitHeight)
+
+          readonly property bool onClock: !root.playing && !root.showPeople
+          readonly property bool onList: root.showPeople && (root.peopleMode === "list" || root.peopleMode === "remove")
+          readonly property bool editing: root.showPeople && (root.peopleMode === "name" || root.peopleMode === "place")
+
+          Row {
+            id: actions
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Style.spacing.lg
+
+            // The clock and the map.
+            ActionButton { visible: toolbar.onClock; text: "←  Earlier"; onClicked: if (root.clock) root.clock.scrub(-60) }
+            ActionButton { visible: toolbar.onClock; text: "Later  →"; onClicked: if (root.clock) root.clock.scrub(60) }
+            ActionButton { visible: toolbar.onClock && root.scrubbing; primary: true; text: "Back to now"; onClicked: if (root.clock) root.clock.resetScrub() }
+            ActionButton { visible: toolbar.onClock && !root.showMap && root.hasFace; text: "Set the clock"; onClicked: root.startGame() }
+            ActionButton { visible: toolbar.onClock && root.hasMap; text: root.showMap ? "The clock" : "The map"; onClicked: root.showMap = !root.showMap }
+            ActionButton { visible: toolbar.onClock; text: "People"; onClicked: root.openPeople() }
+
+            // The People screen.
+            ActionButton { visible: toolbar.onList; text: "←  The clock"; onClicked: root.closePeople() }
+            ActionButton { visible: toolbar.editing; text: "←  Back"; onClicked: root.editBack() }
+            ActionButton {
+              visible: root.showPeople && root.peopleMode === "name"
+              primary: true
+              enabled: root.draftName.replace(/^\s+|\s+$/g, "") !== ""
+              text: "Next  →"
+              onClicked: root.editAccept()
+            }
+            ActionButton {
+              visible: root.showPeople && root.peopleMode === "place"
+              primary: true
+              enabled: root.matches.length > 0 || root.draftWhere.indexOf("/") !== -1
+              text: "Save"
+              onClicked: root.editAccept()
+            }
+
+            // The game.
+            ActionButton { visible: root.playing; text: "←  The clock"; onClicked: root.stopGame() }
+            ActionButton { visible: root.playing; text: "Start again"; onClicked: if (root.currentRound) root.hands = root.currentRound.startHands }
+            ActionButton {
+              visible: root.playing && root.solved
+              primary: true
+              text: root.currentRound && root.nextName === root.currentRound.name ? "Play again" : root.nextName + " next  →"
+              onClicked: root.nextRound()
+            }
+          }
+
+          ActionButton {
+            id: closeButton
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            text: "Close"
+            onClicked: root.dismiss()
+          }
         }
       }
     }

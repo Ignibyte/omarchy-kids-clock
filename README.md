@@ -8,13 +8,13 @@ Time is abstract for a young child, so this clock does not lead with digits.
 Each place gets a sky with the sun on its arc by day and the moon by night. A
 sentence says what time of day it is there in words. Each person gets a card:
 their own sky, whether they are awake, what they are probably doing, and
-whether it is a good time to call. The arrow keys move the sun forward and
+whether it is a good time to call. Two buttons move the sun forward and
 back an hour at a time, so a child can watch it become bedtime in Tokyo.
 
 ![The big clock on the Explorer face, Tokyo Night theme](preview.png)
 
 From the second band an analog face sits beside the digits, showing the same
-time, and Enter opens a small game: set the hands to Grandma's time. The sun
+time, and a button opens a small game: set the hands to Grandma's time. The sun
 under the face follows the hands, and the round is won when it sits in the
 ring where Grandma's sun really is.
 
@@ -38,11 +38,11 @@ The age band is a parent setting. Each band adds to the one before.
 
 ## The map
 
-On the Navigator band, M swaps the clock for a map of the world with the
+On the Navigator band, The map swaps the clock for a map of the world with the
 night side shaded. The shade is the real one for the shown instant, worked
 out from the sun's declination and Greenwich solar noon, so it leans towards
-one pole in December and the other in June, and it sweeps west as the arrow
-keys move the sun. A sun marks where the sun is straight overhead, a moon
+one pole in December and the other in June, and it sweeps west as Earlier
+and Later move the sun. A sun marks where the sun is straight overhead, a moon
 where it is the middle of the night, a ring marks home and a dot each
 person, with their time beside it. It is a flat map rather than a globe on
 purpose: it hides no hemisphere, and the shade crossing a continent is the
@@ -71,14 +71,14 @@ where Omarchy keeps every plugin's settings.
 
 ## Adding people
 
-Press P in the big clock. The People screen lists home and everyone the
+Press People in the big clock. The People screen lists home and everyone the
 clock shows, with where they live and their time. "Add someone" asks two
 questions: what the child calls them, and where they live. Type a few
 letters of the town or city and pick it from the matches; about 1,500
 places are built in, and a name shared by several places, such as Portland,
 is stored with its region so it comes back as itself. A place that is not
 in the list can be given as a time zone, such as `America/Phoenix`. Each
-person has a remove link that asks once. The Home row picks the home city
+person has a Remove button that asks once. The Home row picks the home city
 when the computer's time zone is a region rather than your town, so the
 sunrise is right.
 
@@ -114,16 +114,24 @@ Names never leave the machine. Nothing about a child is collected.
 The chip shows the sun by day and the moon by night for home. Left click
 opens the big clock. Right click puts the sun back to now after a scrub.
 
-## Keys in the big clock
+## The buttons
 
-| Key | Does |
+A row of buttons along the bottom of the card does everything, sized for
+small hands and drawn with the shell's own button so they follow the theme.
+Only the ones that mean something right now are shown.
+
+| Button | Does |
 |---|---|
-| Right, Left | move the sun an hour later or earlier; with Shift, a quarter hour |
-| 0, Home, Space | back to now |
-| Enter | open the set-the-clock game (tinkerer and navigator); clicking the face does the same |
-| M | the map, and back to the clock (navigator) |
-| P | the People screen, where a parent adds and removes people |
-| Escape | back to now if the sun was moved, back to the clock from the map or the People screen, otherwise close |
+| Earlier, Later | move the sun an hour earlier or later |
+| Back to now | appears once the sun has moved, and puts it back |
+| Set the clock | opens the set-the-clock game (tinkerer and navigator); clicking the analog face does the same |
+| The map, The clock | swap between the map and the clock (navigator) |
+| People | the People screen, where a parent adds and removes people |
+| Close | closes the big clock; so does a click outside the card |
+
+The keys do the same for anyone at a keyboard: Left and Right move the sun
+(a quarter hour with Shift), 0 comes back to now, Enter opens the game, M is
+the map, P is people, and Escape steps back and finally closes.
 
 A view can be opened directly, which suits a keybinding:
 
@@ -150,15 +158,11 @@ says what the person is probably doing. Twelve hours out is the one trap:
 the hands read right, the sky shows the other half of the day, and the hint
 says so.
 
-| Key | Does |
-|---|---|
-| Right, Left | turn the hands five minutes; with Shift, one minute |
-| Up, Down | turn the hands an hour |
-| 0, Home | hands back to twelve |
-| Enter, Space | the next person, once the round is won |
-| Escape | back to the clock |
-
-Four big round buttons under the face do the same for a mouse or a finger.
+Four big round buttons under the face turn the hands five minutes or an
+hour either way. Start again puts them back to twelve, The clock leaves the
+game, and once the round is won a button names the next person. On a
+keyboard, Left and Right turn the hands five minutes (one with Shift), Up
+and Down an hour, 0 resets them, Enter moves on and Escape leaves.
 
 ## How it works
 

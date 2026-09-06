@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "ignibyte.kids-clock",
   "name": "Sun Clock",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "author": "Ignibyte",
   "description": "A clock for kids: where the sun is over the people you love, and whether they are awake.",
   "license": "MIT",
@@ -52,7 +52,7 @@
         "type": "string",
         "label": "People",
         "defaultValue": "Grandma=Phoenix; Cousin Mia=Berlin; Uncle Ken=Tokyo",
-        "description": "Name=City pairs separated by semicolons; the People screen (P in the big clock) edits this. Cities from the built-in list of about 1,500, \"City, Region\" when the name is shared, or an IANA zone such as America/Phoenix."
+        "description": "Name=City pairs separated by semicolons; the People screen (People in the big clock) edits this. Cities from the built-in list of about 1,500, \"City, Region\" when the name is shared, or an IANA zone such as America/Phoenix."
       },
       {
         "key": "homeCity",
