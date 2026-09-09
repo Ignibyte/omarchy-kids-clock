@@ -328,6 +328,11 @@ the near half of the terminator closed along the rim) and the face from
 rotated rectangles, all bound to theme colours so they re-tint;
 `BarWidget.qml` is the chip.
 
+## What is next
+
+[ROADMAP.md](ROADMAP.md) has what is likely to happen next and why in that
+order, plus the questions still waiting on a decision.
+
 ## Part of Omarchy Kids
 
 A spoke of the community Kids Mode effort at
