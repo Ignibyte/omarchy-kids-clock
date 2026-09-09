@@ -15,12 +15,11 @@ back an hour at a time, so a child can watch it become bedtime in Tokyo.
 
 Before anyone is added there is still a clock: home fills the card, its own
 sky and, on the bands that have one, a full-size face. Earlier and Later move
-that sun, and the game plays against your own clock.
+that sun, and the game needs nobody at all.
 
 From the second band an analog face sits beside the digits, showing the same
-time, and a button opens a small game: set the hands to Grandma's time. The sun
-under the face follows the hands, and the round is won when it sits in the
-ring where Grandma's sun really is.
+time, and a button opens the clock game: set the hands to a time you are told,
+or read the time the hands already show.
 
 ![The set-the-clock game on the Tinkerer face](preview-game.png)
 
@@ -115,7 +114,7 @@ chip to open the big clock. It reads its own `data/` files and nothing else on
 disk. It makes no network requests of its own. The only thing it writes is its
 own entry in `~/.config/omarchy/shell.json`, through the shell's own save call,
 when someone adds or removes a person or names home. There is no lock on the
-People screen: a child can reach it too.
+People or Me screens: a child can reach them too.
 
 ## Adding people
 
@@ -128,12 +127,18 @@ is stored with its region so it comes back as itself. A place that is not
 in the list can be given as a time zone, such as `America/Phoenix`. Each
 person has a Remove button that asks once.
 
-The Home row is different, because home's clock is the computer's own and
-never moves off the system time zone. So home takes free text: a town, a
+Home is not in this list. It has its own screen.
+
+## Me
+
+Me is where home is named. Home's clock is the computer's own and never moves
+off the system time zone, so what home is called is free text: a town, a
 street, "the house on the hill". Whatever is typed is what home is called.
+
 Picking a real place from the list does one thing more — it puts home on the
 map and the globe, and gives the sky the right sunrise for that latitude
-instead of the one that belongs to the system zone.
+instead of the one that belongs to the system zone. A button hands home back
+to the computer's time zone.
 
 ![The People screen asking where Nana lives](preview-people.png)
 
@@ -156,7 +161,7 @@ omarchy-shell shell setBarWidget ignibyte.kids-clock people '"Grandma=Phoenix; N
 |---|---|---|
 | `band` | `explorer` | `explorer`, `tinkerer` or `navigator` |
 | `people` | `Grandma=Phoenix; Cousin Mia=Berlin; Uncle Ken=Tokyo` | `Name=City` pairs separated by semicolons, which the People screen edits. Cities from the built-in list of about 1,460, `City, Region` when the name is shared, or any IANA zone such as `America/Phoenix`; a zone tzdata does not know is reported as unknown rather than shown as UTC. Names up to 40 characters, places up to 64, at most 32 pairs kept. An empty value shows nobody; a missing key shows these three examples |
-| `homeCity` | blank | What home is called, as free text. Blank uses the city that matches the system time zone. A city from the built-in list also places home on the map and the globe and gives its sky the right sunrise; anything else is only the name. Home's clock follows the system time zone either way |
+| `homeCity` | blank | What home is called, as free text, edited on the Me screen. Blank uses the city that matches the system time zone. A city from the built-in list also places home on the map and the globe and gives its sky the right sunrise; anything else is only the name. Home's clock follows the system time zone either way |
 | `wakeTime`, `schoolStart`, `schoolEnd`, `dinnerTime`, `bedTime` | `07:00`, `08:30`, `15:00`, `18:00`, `20:00` | The family routine. "Uncle Ken is probably at school" means the child's own routine moved to Tokyo, which is honest and personal rather than a guess about another country |
 | `hourFormat` | `12` | `12` or `24`, for the bands that show digits |
 
@@ -177,16 +182,22 @@ Only the ones that mean something right now are shown.
 |---|---|
 | Earlier, Later | move the sun an hour earlier or later, on the clock, the map and the globe |
 | Back to now | appears once the sun has moved, and puts it back |
-| Play | opens the set-the-clock game (tinkerer and navigator); clicking the analog face does the same |
+| Play | opens the clock game (tinkerer and navigator); clicking the analog face does the same |
 | Map | the world map with the night side (navigator) |
 | Globe | the globe; under it two round buttons turn it, and Find home brings it back to home |
 | People | the People screen, where a parent adds and removes people |
-| Clock | back to the clock from the map or the globe |
+| Me | the Me screen, where home is named |
+| Set the clock, Read the clock | in the game, swaps to the other round |
+| Another one | in the game, once the round is won |
+| Clock | back to the clock from the map, the globe, People, Me or the game |
 | Close | closes the big clock; so does a click outside the card |
 
 The keys do the same for anyone at a keyboard: Left and Right move the sun
 (a quarter hour with Shift), 0 comes back to now, Enter opens the game, M is
-the map, G the globe, P people, and Escape steps back and finally closes.
+the map, G the globe, P people, and Escape steps back and finally closes. In
+the game, Left and Right turn the hands a step (one minute with Shift), Up and
+Down an hour, 0 puts them back, R swaps the two rounds, 1 to 4 pick an answer
+in Read the clock, and Enter moves on once the round is won.
 
 A view can be opened directly, which suits a keybinding:
 
@@ -195,32 +206,36 @@ omarchy-shell shell toggle ignibyte.kids-clock '{"view":"map"}'
 omarchy-shell shell toggle ignibyte.kids-clock '{"view":"game"}'
 omarchy-shell shell toggle ignibyte.kids-clock '{"view":"people"}'
 omarchy-shell shell toggle ignibyte.kids-clock '{"view":"globe"}'
+omarchy-shell shell toggle ignibyte.kids-clock '{"view":"me"}'
 ```
 
-## The set-the-clock game
+## The clock game
 
-One person at a time, or your own clock when nobody has been added yet.
-Their time is frozen as the round starts and rounded
-to the band's step, and the words say it the way school does: "It's about
-quarter to three in the afternoon in Phoenix." The hands start at twelve in
-the same half of the day, like a toy clock reset (at nine when the answer is
-twelve itself), so the child sets the hour
-and then the minutes. The hour hand is geared to the minute hand, so half
-past shows it halfway to the next numeral, which is the thing children find
-hardest about a real clock.
+Two rounds, and both are about the face alone. There is no sun in either, no
+sky and no morning or afternoon: a dial says none of those things, and asking
+a child to read a sun and a clock at once teaches neither.
 
-The sky under the face belongs to that person, and its sun or moon follows
-the hands. A dashed ring marks where the sun really is right now. When the
-hands are right the sun sits in the ring, the ring fills, and the sentence
-says what the person is probably doing. Twelve hours out is the one trap:
-the hands read right, the sky shows the other half of the day, and the hint
-says so.
+**Set the clock** names a time — "Set the clock to quarter past three" — and
+the child turns the hands until they say it. The hands start at twelve, like a
+toy clock reset (at nine when the answer is twelve itself), so the hour goes
+first and then the minutes. The hour hand is geared to the minute hand, so
+half past shows it halfway to the next numeral, which is the thing children
+find hardest about a real clock. Four round buttons turn the hands an hour or
+a step either way, and a line says which way to go and how close it is.
 
-Four big round buttons under the face turn the hands five minutes or an
-hour either way. Start again puts them back to where they began, Clock leaves
-the game, and once the round is won a button names the next person. On a
-keyboard, Left and Right turn the hands five minutes (one with Shift), Up
-and Down an hour, 0 resets them, Enter moves on and Escape leaves.
+**Read the clock** does it the other way round: the hands are already set, and
+four times are offered. The three wrong ones are the mistakes a child actually
+makes — an hour out either way, "past" read as "to", and the two hands read
+the wrong way round — so a guess that lands is a guess that was read.
+
+![The set-the-clock round](preview-game.png)
+
+![The read-the-clock round](preview-read.png)
+
+The time is random each round and never the same twice running. The band sets
+how fine it is: quarter hours while "half past" and "quarter to" are still
+new, five minutes once they are not. A button swaps the two rounds at any
+time, and both work whether or not anyone has been added to the clock.
 
 ## How it works
 

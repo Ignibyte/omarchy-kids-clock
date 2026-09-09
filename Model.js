@@ -244,6 +244,19 @@ function addPerson(text, name, where) {
   return peopleString(entries)
 }
 
+// Where a person sits in the setting, found by who they are rather than by
+// where they were on screen. The People screen holds the person it is about
+// to remove, not the row number, because rows move as the list shrinks.
+function indexOfPerson(text, name, where) {
+  var entries = parsePeopleRaw(text)
+  var wantName = cleanField(name, LONGEST_NAME)
+  var wantWhere = cleanField(where, LONGEST_PLACE)
+  for (var i = 0; i < entries.length; i++) {
+    if (entries[i].name === wantName && entries[i].where === wantWhere) return i
+  }
+  return -1
+}
+
 function removePerson(text, index) {
   var entries = parsePeopleRaw(text)
   if (index < 0 || index >= entries.length) return peopleString(entries)
@@ -342,12 +355,23 @@ function localParts(utcMs, offsetSeconds) {
   }
 }
 
+var HALF_DAY = 720
+
 function formatTime(hour, minute, hourFormat) {
   var mm = (minute < 10 ? "0" : "") + minute
   if (String(hourFormat) === "24") return (hour < 10 ? "0" : "") + hour + ":" + mm
   var h = hour % 12
   if (h === 0) h = 12
   return h + ":" + mm + (hour < 12 ? " AM" : " PM")
+}
+
+// The digits for a face: no AM, no PM, because a dial says neither. 0 to 719.
+function faceDigits(minutes) {
+  var m = mod(minutes, HALF_DAY)
+  var hour = Math.floor(m / 60)
+  if (hour === 0) hour = 12
+  var mm = m % 60
+  return hour + ":" + (mm < 10 ? "0" : "") + mm
 }
 
 // "yesterday", "today" or "tomorrow" there, relative to the home date.
@@ -627,72 +651,130 @@ function solarTimesFor(utcMs, place, offsetSeconds) {
     : solarTimes(utcMs, place.lat, place.lon, offsetSeconds)
 }
 
-// One round of the game: a person, their time frozen when the round starts
-// and rounded to the band's step, and where the hands begin. They start at
-// twelve in the same half of the day, like a toy clock reset, so the child
-// sets the hour and then the minutes without a trip round the other half.
-// The goal is where the sun or the moon sits at the rounded target, so the
-// moving body lands exactly in the ring when the hands are right.
-function gameRound(person, offsetInfo, frozenMs, routine, rules, hourFormat) {
-  var offset = offsetInfo.offsetSeconds
-  var parts = localParts(frozenMs, offset)
+// ---- the clock game. Two rounds, both about the face alone: set the hands
+// to a time you are told, or read the time the hands already show. Neither
+// knows anything about the sun, the day or a person: a dial has no morning
+// and no afternoon, and pretending otherwise is what made the old round
+// confusing. Every time is a twelve-hour clock time, 0 to 719.
+
+// A time on the band's step, at random, avoiding the one just asked so two
+// rounds in a row are never the same. `rand` returns 0 to 1.
+function randomClockMinutes(step, rand, avoid) {
+  var s = step > 0 ? step : 5
+  var slots = Math.floor(HALF_DAY / s)
+  var pick = Math.floor((rand ? rand() : Math.random()) * slots) % slots
+  var minutes = mod(pick * s, HALF_DAY)
+  if (avoid !== undefined && avoid !== null && minutes === mod(avoid, HALF_DAY))
+    minutes = mod(minutes + s, HALF_DAY)
+  return minutes
+}
+
+// Where the hands start in the set round: twelve, like a toy clock reset, so
+// the child sets the hour and then the minutes. Twelve itself would already
+// be the answer, so that one starts at nine.
+function startHandsFor(target) {
+  return mod(target, HALF_DAY) === 0 ? 540 : 0
+}
+
+// Set the hands to the time you are told.
+function setRound(rules, hourFormat, rand, avoid) {
   var step = rules && rules.gameStep > 0 ? rules.gameStep : 5
-  var target = roundMinutes(parts.minutesOfDay, step)
-  var start = target < 720 ? 0 : 720
-  if (start === target) start = mod(target - 180, 1440)
-  var goalMs = frozenMs + (target - parts.minutesOfDay) * MS_PER_MINUTE
-  var goal = skyPosition(goalMs, solarTimesFor(goalMs, person, offset))
-  var activity = activityAt(target, routine, parts.weekend)
-  var words = clockWords(target) + " " + dayPartWords(target)
-  // `self` marks the round the child plays against their own clock, the one
-  // there is before anyone has been added. It is the same round in the second
-  // person: "your clock", "here", "you are probably".
-  var self = person.self === true
+  var target = randomClockMinutes(step, rand, avoid)
+  var words = clockWords(target)
   return {
-    name: person.name,
-    title: self ? "Your clock" : person.name + "'s clock",
-    city: person.city,
-    zone: person.zone,
-    lat: person.lat === undefined ? null : person.lat,
-    lon: person.lon === undefined ? null : person.lon,
-    offsetSeconds: offset,
-    frozenMs: frozenMs,
-    exactMinutes: parts.minutesOfDay,
+    mode: "set",
+    step: step,
     targetMinutes: target,
-    startHands: start,
-    targetWords: words,
-    targetDigits: rules && rules.digits ? formatTime(Math.floor(target / 60), target % 60, hourFormat) : "",
-    prompt: self ? "It's about " + words + " here."
-      : "It's about " + words + " in " + person.city + ".",
-    task: "Turn the hands until the " + (goal.isDay ? "sun" : "moon") + " sits in the ring.",
-    solvedSentence: self
-      ? "That's it! Here it's about " + words + ". You are probably " + activity.label + "."
-      : "That's it! In " + person.city + " it's about " + words + ". " + person.name + " is probably " + activity.label + ".",
-    goalIsDay: goal.isDay,
-    goalT: clamp01(goal.t)
+    startHands: startHandsFor(target),
+    words: words,
+    digits: faceDigits(target),
+    prompt: "Set the clock to " + words + ".",
+    task: "Turn the hands until they say " + words + ".",
+    solvedSentence: "That's it! The clock says " + words + "."
   }
 }
 
-// The face and the sky for the hands as the child has set them. `hands` is
-// a running count of minutes, so turning on past midnight keeps the sky
-// moving instead of jumping. `delta` is the shortest way to the target in
-// minutes, signed; zero is solved. Twelve hours off is the trap the sky
-// exists to show: the hands read right and the sky says otherwise.
+// The times offered beside the right one: an hour out either way, past read
+// as to, and the two hands read the wrong way round. All are mistakes a
+// child actually makes, all land on the band's own step, and any that
+// collide with the answer or each other are dropped.
+function readDistractors(answer, step) {
+  var s = step > 0 ? step : 5
+  var right = mod(answer, HALF_DAY)
+  var hour = Math.floor(right / 60)
+  var minute = right % 60
+  var out = []
+  function add(minutes) {
+    var value = mod(Math.round(mod(minutes, HALF_DAY) / s) * s, HALF_DAY)
+    if (value !== right && out.indexOf(value) === -1) out.push(value)
+  }
+  add(right + 60)
+  add(right - 60)
+  if (minute !== 0) add(hour * 60 + (60 - minute))
+  add(mod(Math.round(minute / 5), 12) * 60 + mod(hour, 12) * 5)
+  add(right + s)
+  add(right - s)
+  add(right + HALF_DAY / 2)
+  return out
+}
+
+// Read the time the hands already show. The right answer sits among three
+// wrong ones in an order that does not give it away.
+function readRound(rules, hourFormat, rand, avoid) {
+  var step = rules && rules.gameStep > 0 ? rules.gameStep : 5
+  var shown = randomClockMinutes(step, rand, avoid)
+  var wrong = readDistractors(shown, step)
+  var picked = []
+  for (var i = 0; i < wrong.length && picked.length < 3; i++) picked.push(wrong[i])
+  var times = picked.concat([shown])
+  // A shuffle the caller can make repeatable, so the answer is not always last.
+  for (var j = times.length - 1; j > 0; j--) {
+    var k = Math.floor((rand ? rand() : Math.random()) * (j + 1)) % (j + 1)
+    var swap = times[j]; times[j] = times[k]; times[k] = swap
+  }
+  var choices = []
+  for (var c = 0; c < times.length; c++) {
+    choices.push({
+      minutes: times[c],
+      words: clockWords(times[c]),
+      digits: faceDigits(times[c]),
+      right: times[c] === shown
+    })
+  }
+  return {
+    mode: "read",
+    step: step,
+    targetMinutes: shown,
+    shownMinutes: shown,
+    startHands: shown,
+    words: clockWords(shown),
+    digits: faceDigits(shown),
+    choices: choices,
+    prompt: "What time is the clock saying?",
+    task: "Read the hands, then pick the time.",
+    solvedSentence: "That's it! The clock says " + clockWords(shown) + "."
+  }
+}
+
+function gameRound(mode, rules, hourFormat, rand, avoid) {
+  return String(mode) === "read"
+    ? readRound(rules, hourFormat, rand, avoid) : setRound(rules, hourFormat, rand, avoid)
+}
+
+// The face for the hands as the child has set them. `hands` is a running
+// count of minutes, so turning past twelve keeps going rather than jumping.
+// `delta` is the shortest way round to the target, signed; zero is solved.
+// There is no half of the day to be wrong about any more.
 function gameView(round, hands) {
-  var minutes = mod(hands, 1440)
-  var instant = round.frozenMs + (hands - round.exactMinutes) * MS_PER_MINUTE
-  var sky = skyPosition(instant, solarTimesFor(instant, round, round.offsetSeconds))
-  var delta = mod(round.targetMinutes - hands + 720, 1440) - 720
+  var minutes = mod(hands, HALF_DAY)
+  var delta = mod(round.targetMinutes - hands + HALF_DAY / 2, HALF_DAY) - HALF_DAY / 2
   var hint
   if (delta === 0) hint = "That's it!"
-  else if (Math.abs(delta) === 720) hint = "The hands are right, but it's the wrong half of the day. Keep going round."
   else if (Math.abs(delta) <= 30) hint = delta > 0 ? "Nearly. A little further on." : "Nearly. A little back."
   else hint = delta > 0 ? "Turn the hands forward." : "Turn the hands back."
   return {
     minutesOfDay: minutes,
     angles: handAngles(minutes),
-    isDay: sky.isDay,
-    t: clamp01(sky.t),
     delta: delta,
     solved: delta === 0,
     hint: hint
@@ -974,6 +1056,7 @@ if (typeof module !== "undefined") {
     parseOffsetLines: parseOffsetLines,
     localParts: localParts,
     formatTime: formatTime,
+    faceDigits: faceDigits,
     dayLabel: dayLabel,
     offsetWords: offsetWords,
     solarTimes: solarTimes,
@@ -994,6 +1077,11 @@ if (typeof module !== "undefined") {
     clockWords: clockWords,
     dayPartWords: dayPartWords,
     gameRound: gameRound,
+    setRound: setRound,
+    readRound: readRound,
+    readDistractors: readDistractors,
+    randomClockMinutes: randomClockMinutes,
+    startHandsFor: startHandsFor,
     gameView: gameView,
     subsolarPoint: subsolarPoint,
     nightPolygon: nightPolygon,
@@ -1010,6 +1098,7 @@ if (typeof module !== "undefined") {
     peopleString: peopleString,
     addPerson: addPerson,
     removePerson: removePerson,
+    indexOfPerson: indexOfPerson,
     DEFAULT_PEOPLE: DEFAULT_PEOPLE,
     SUN_GLYPH: SUN_GLYPH,
     globeBasis: globeBasis,

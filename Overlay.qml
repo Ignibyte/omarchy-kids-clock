@@ -144,6 +144,7 @@ Item {
     if (playing) return
     showMap = false
     showPeople = false
+    showMe = false
     globeDragging = true
     centreGlobeOnHome()
     globeDragging = false
@@ -169,10 +170,63 @@ Item {
     return false
   }
 
+  // ---- Me: what home is called and where it is. Its own screen, because it
+  // is the one place on the clock that is not somebody else.
+  property bool showMe: false
+  property string meDraft: ""
+  readonly property var meMatches: showMe ? Model.searchCities(cities, meDraft, 5) : []
+  // Anything typed can be home: home's clock is the computer's clock and
+  // never leaves its time zone, so the place is a name. A city from the list
+  // does one thing more, which the options say.
+  readonly property var meOptions: {
+    var out = []
+    for (var i = 0; i < meMatches.length; i++)
+      out.push({ label: meMatches[i].label, hint: "on the map and the globe", key: meMatches[i].key })
+    var typed = meDraft.trim()
+    if (typed !== "" && !Model.findCity(cities, typed))
+      out.push({ label: "Use \u201c" + typed + "\u201d", hint: "as it is typed", key: typed })
+    return out
+  }
+  readonly property int meIndex0: 0
+  property int meIndex: 0
+  onMeOptionsChanged: meIndex = 0
+  readonly property string meName: clock ? clock.homeName : "home"
+  readonly property bool meFromZone: clock ? clock.homeCitySetting === "" : true
+
+  function openMe() {
+    if (playing) return
+    showMap = false
+    showGlobe = false
+    showPeople = false
+    meDraft = clock ? clock.homeCitySetting : ""
+    meIndex = 0
+    showMe = true
+    Qt.callLater(function() { meField.forceActiveFocus(); meField.cursorPosition = meField.text.length })
+  }
+
+  function closeMe() {
+    showMe = false
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function saveMe(key) {
+    persistSettings({ homeCity: String(key || "") })
+    closeMe()
+  }
+
+  function useSystemZone() {
+    persistSettings({ homeCity: "" })
+    closeMe()
+  }
+
+  function acceptMe() {
+    var option = meOptions[meIndex]
+    if (option) saveMe(option.key)
+  }
+
   property bool showPeople: false
   property string peopleMode: "list"   // list, name, place, remove
   property int peopleIndex: 1
-  property string placeFor: "person"   // person or home
   property string draftName: ""
   property string draftWhere: ""
   property int matchIndex: 0
@@ -190,16 +244,12 @@ Item {
       out.push({ label: matches[i].label, hint: matches[i].city.zone, key: matches[i].key })
     var typed = draftWhere.trim()
     if (typed === "" || peopleMode !== "place") return out
-    if (placeFor === "home") out.push({ label: "Use \u201c" + typed + "\u201d", hint: "as it is typed", key: typed })
-    else if (Model.isZone(typed)) out.push({ label: typed, hint: "a time zone", key: typed })
+    if (Model.isZone(typed)) out.push({ label: typed, hint: "a time zone", key: typed })
     return out
   }
   onPlaceOptionsChanged: matchIndex = 0
   readonly property var peopleEntries: {
     var out = []
-    var homeSet = clock ? clock.homeCitySetting !== "" : false
-    out.push({ kind: "home", name: "Home", time: home ? home.timeText : "",
-      place: clock ? clock.homeName + (homeSet ? "" : "  ·  from the computer's time zone") : "" })
     for (var i = 0; i < storedPeople.length; i++) {
       var entry = storedPeople[i]
       var city = Model.findCity(cities, entry.where)
@@ -217,13 +267,11 @@ Item {
       place: storedPeople.length > cap ? "this face shows the first " + cap : "" })
     return out
   }
-  readonly property string editPrompt: peopleMode === "name" ? "What do you call them?"
-    : (placeFor === "home" ? "Where are we?" : "Where does " + draftName + " live?")
+  readonly property string editPrompt: peopleMode === "name"
+    ? "What do you call them?" : "Where does " + draftName + " live?"
   readonly property string editHint: peopleMode === "name"
     ? "The name the child uses."
-    : (placeFor === "home"
-      ? "Type anything: a town, a street, whatever we call the house. Home's clock always follows the computer's own time zone; picking a place from the list also puts home on the map and the globe."
-      : "Type a few letters and pick the place. If it is not here, try the nearest big city, or a time zone such as America/Phoenix.")
+    : "Type a few letters and pick the place. If it is not here, try the nearest big city, or a time zone such as America/Phoenix."
 
   // Save some settings onto the plugin's entry, keeping the rest.
   function persistSettings(values) {
@@ -241,8 +289,10 @@ Item {
     if (playing) return
     showMap = false
     showGlobe = false
+    showMe = false
     peopleMode = "list"
-    peopleIndex = storedPeople.length > 0 ? 1 : 0
+    pending = null
+    peopleIndex = 0
     showPeople = true
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
@@ -259,7 +309,6 @@ Item {
 
   function beginAdd() {
     if (storedPeople.length >= mostPeople) return
-    placeFor = "person"
     draftName = ""
     draftWhere = ""
     peopleMode = "name"
@@ -274,29 +323,21 @@ Item {
     focusEditField()
   }
 
-  function beginHome() {
-    placeFor = "home"
-    draftWhere = ""
-    peopleMode = "place"
-    focusEditField()
-  }
-
   function backToList() {
     peopleMode = "list"
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
   function editBack() {
-    if (peopleMode === "place" && placeFor === "person") { peopleMode = "name"; focusEditField() }
+    if (peopleMode === "place") { peopleMode = "name"; focusEditField() }
     else backToList()
   }
 
   function savePlace(whereKey) {
     if (!clock) return
-    if (placeFor === "home") persistSettings({ homeCity: whereKey })
-    else persistSettings({ people: Model.addPerson(clock.peopleText, draftName, whereKey) })
+    persistSettings({ people: Model.addPerson(clock.peopleText, draftName, whereKey) })
     backToList()
-    Qt.callLater(function() { peopleIndex = placeFor === "home" ? 0 : Math.max(1, storedPeople.length) })
+    Qt.callLater(function() { peopleIndex = Math.max(0, storedPeople.length - 1) })
   }
 
   function pickMatch(index) {
@@ -317,101 +358,106 @@ Item {
 
   function activateRow(index) {
     peopleIndex = index
-    if (index === 0) beginHome()
-    else if (index === peopleEntries.length - 1) beginAdd()
+    if (index === storedPeople.length) beginAdd()
   }
 
-  function askRemove() {
-    if (peopleIndex === 0) {
-      if (clock && clock.homeCitySetting !== "") persistSettings({ homeCity: "" })
-    } else if (peopleIndex >= 1 && peopleIndex <= storedPeople.length) {
-      peopleMode = "remove"
-    }
-  }
+  // The person waiting to be removed is held by name and place, not by the
+  // row they were on. A row index moves under the list as it shrinks, and
+  // once it slid onto "Add someone" the confirm quietly did nothing; that is
+  // what made the last person impossible to remove.
+  property var pending: null
 
   function askRemoveAt(index) {
+    if (index < 0 || index >= storedPeople.length) return
     peopleIndex = index
-    askRemove()
+    pending = storedPeople[index]
+    peopleMode = "remove"
+  }
+
+  function askRemove() { askRemoveAt(peopleIndex) }
+
+  function cancelRemove() {
+    pending = null
+    peopleMode = "list"
   }
 
   function confirmRemove() {
-    if (peopleMode !== "remove") return
-    persistSettings({ people: Model.removePerson(clock.peopleText, peopleIndex - 1) })
+    if (peopleMode !== "remove" || !pending || !clock) return
+    var at = Model.indexOfPerson(clock.peopleText, pending.name, pending.where)
+    if (at >= 0) persistSettings({ people: Model.removePerson(clock.peopleText, at) })
+    pending = null
     peopleMode = "list"
-    Qt.callLater(function() { peopleIndex = Math.min(peopleIndex, Math.max(0, storedPeople.length)) })
+    Qt.callLater(function() { peopleIndex = Math.max(0, Math.min(peopleIndex, storedPeople.length)) })
   }
 
-  // ---- the set-the-clock game. One person at a time: their time is frozen
-  // when the round starts, the hands begin at twelve, and the sun under the
-  // face follows the hands until it sits in the ring where the real sun is.
+  // ---- the clock game. Two rounds, and both are about the face alone:
+  // Set the clock puts a time in words and asks for the hands, Read the clock
+  // sets the hands and asks for the time. No sun, no sky, no morning or
+  // afternoon: a dial says none of those, and pretending it did was what made
+  // the old round confusing.
   property bool playing: false
-  property int roundIndex: 0
+  property string gameMode: "set"     // set or read
   property var currentRound: null
   property int hands: 0
-  readonly property var game: playing && currentRound ? Model.gameView(currentRound, hands) : null
-  readonly property bool solved: game ? game.solved : false
-  readonly property string nextName: {
-    if (!playing || !currentRound) return ""
-    if (players.length < 2) return currentRound.name
-    var player = players[(roundIndex + 1) % players.length]
-    return player ? player.person.name : currentRound.name
+  property int chosen: -1
+  readonly property var game: playing && currentRound && currentRound.mode === "set"
+    ? Model.gameView(currentRound, hands) : null
+  readonly property bool solved: {
+    if (!playing || !currentRound) return false
+    if (currentRound.mode === "read") return chosen >= 0 && currentRound.choices[chosen].right
+    return game ? game.solved : false
   }
+  readonly property bool wrongPick: playing && currentRound && currentRound.mode === "read"
+    && chosen >= 0 && !currentRound.choices[chosen].right
+  readonly property string otherMode: gameMode === "set" ? "read" : "set"
+  readonly property string otherModeName: gameMode === "set" ? "Read the clock" : "Set the clock"
+  // The band's own step: quarter hours while "half past" is still new, five
+  // minutes once it is not.
+  readonly property int gameStep: rules && rules.gameStep > 0 ? rules.gameStep : 5
+  readonly property string stepWords: gameStep === 15 ? "15 minutes" : gameStep + " minutes"
 
-  // Home shaped like a person, so there is always a clock to play against.
-  // The offset is the computer's own, which is the only one home's clock ever
-  // runs on; `self` puts the round in the second person.
-  readonly property var homePlayer: !clock ? null
-    : ({ person: { name: clock.homeName, city: clock.homeName, zone: clock.homeZone,
-                   lat: clock.homeCity ? clock.homeCity.lat : null,
-                   lon: clock.homeCity ? clock.homeCity.lon : null, self: true },
-         offset: { offsetSeconds: clock.homeOffsetSeconds } })
-
-  // Who the game asks about: everyone whose zone offset has arrived, and home
-  // alone when nobody has been added yet.
-  readonly property var players: {
-    var out = []
-    if (!clock) return out
-    var people = clock.people || []
-    for (var i = 0; i < people.length; i++) {
-      var info = clock.offsets ? clock.offsets[people[i].zone] : null
-      if (info && info.offsetSeconds !== undefined) out.push({ person: people[i], offset: info })
-    }
-    if (out.length === 0 && homePlayer) out.push(homePlayer)
-    return out
-  }
-
-  function beginRound(index) {
-    var player = players[index]
-    if (!player) return
-    currentRound = Model.gameRound(player.person, player.offset, clock.nowMs, clock.routine, clock.rules, clock.hourFormat)
+  function beginRound(mode) {
+    if (!clock) return
+    var previous = currentRound ? currentRound.targetMinutes : null
+    gameMode = String(mode) === "read" ? "read" : "set"
+    currentRound = Model.gameRound(gameMode, clock.rules, clock.hourFormat, null, previous)
     hands = currentRound.startHands
+    chosen = -1
   }
 
-  function startGame() {
-    if (!hasFace || !clock || players.length === 0) return
+  function startGame(mode) {
+    if (!hasFace || !clock) return
     clock.resetScrub()
     showMap = false
     showGlobe = false
     showPeople = false
-    roundIndex = 0
-    beginRound(0)
+    showMe = false
+    beginRound(mode || gameMode)
     playing = true
   }
 
-  function nextRound() {
-    if (players.length === 0) { stopGame(); return }
-    roundIndex = (roundIndex + 1) % players.length
-    beginRound(roundIndex)
+  function switchGameMode() {
+    if (playing) beginRound(otherMode)
   }
 
+  function nextRound() { beginRound(gameMode) }
+
   function turn(deltaMinutes) {
-    if (playing) hands = hands + deltaMinutes
+    if (playing && currentRound && currentRound.mode === "set") hands = hands + deltaMinutes
+  }
+
+  function pickTime(index) {
+    if (!playing || !currentRound || currentRound.mode !== "read") return
+    if (solved) return
+    chosen = index
   }
 
   function stopGame() {
     playing = false
     currentRound = null
+    chosen = -1
   }
+
 
   // The payload may name a view: {"view": "map"}, "game" or "clock".
   function open(payloadJson) {
@@ -424,6 +470,7 @@ Item {
     else if (view === "game") root.startGame()
     else if (view === "people") root.openPeople()
     else if (view === "globe") root.openGlobe()
+    else if (view === "me") root.openMe()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -433,8 +480,10 @@ Item {
     root.stopGame()
     root.showMap = false
     root.showPeople = false
+    root.showMe = false
     root.showGlobe = false
     root.peopleMode = "list"
+    root.pending = null
     if (root.clock) root.clock.resetScrub()
   }
 
@@ -454,26 +503,18 @@ Item {
   }
 
   // The sun or the moon travels a half ellipse from the left horizon to the
-  // right; `t` is 0 at rising and 1 at setting. In the game a dashed ring
-  // marks the goal, and fills when the body sits in it.
+  // right; `t` is 0 at rising and 1 at setting.
   component Sky: Item {
     id: sky
     property bool isDay: true
     property real t: 0.5
     property real bodySize: Style.space(40)
-    property bool showGoal: false
-    property bool goalIsDay: true
-    property real goalT: 0.5
-    property bool goalHit: false
     readonly property real horizonY: height * 0.86
     readonly property real radiusX: width / 2 - bodySize
     readonly property real radiusY: horizonY - bodySize * 0.9
     readonly property real angle: Math.PI * (1 - Math.max(0, Math.min(1, t)))
     readonly property real bodyX: width / 2 + radiusX * Math.cos(angle)
     readonly property real bodyY: horizonY - radiusY * Math.sin(angle)
-    readonly property real goalAngle: Math.PI * (1 - Math.max(0, Math.min(1, goalT)))
-    readonly property real goalX: width / 2 + radiusX * Math.cos(goalAngle)
-    readonly property real goalY: horizonY - radiusY * Math.sin(goalAngle)
 
     Rectangle {
       anchors.fill: parent
@@ -536,35 +577,6 @@ Item {
       }
     }
 
-    // The goal ring, drawn above the body so the body shows inside it.
-    Shape {
-      id: goalRing
-      visible: sky.showGoal
-      readonly property real ringSize: sky.bodySize * 1.6
-      readonly property real stroke: Math.max(2, Style.space(3))
-      width: ringSize
-      height: ringSize
-      x: sky.goalX - width / 2
-      y: sky.goalY - height / 2
-      antialiasing: true
-      layer.enabled: true
-      layer.samples: 4
-      ShapePath {
-        strokeColor: sky.goalIsDay ? root.sunColor : root.moonColor
-        strokeWidth: goalRing.stroke
-        strokeStyle: sky.goalHit ? ShapePath.SolidLine : ShapePath.DashLine
-        dashPattern: [3, 3]
-        fillColor: sky.goalHit ? Util.alpha(root.sunColor, 0.22) : "transparent"
-        PathAngleArc {
-          centerX: goalRing.ringSize / 2
-          centerY: goalRing.ringSize / 2
-          radiusX: goalRing.ringSize / 2 - goalRing.stroke
-          radiusY: goalRing.ringSize / 2 - goalRing.stroke
-          startAngle: 0
-          sweepAngle: 360
-        }
-      }
-    }
   }
 
   // The moon: a crescent. The outer edge is the left half of the disc, the
@@ -729,9 +741,29 @@ Item {
   // The home header: the sentence, the digits when the band allows them,
   // and the scrub banner. Anchors rather than a Row: the digits sit on the
   // right at their own width and the sentence wraps into whatever is left.
+  //
+  // Its height is fixed by the font, never by the words. The sentence gets
+  // two lines whether it needs them or not and the banner keeps its line
+  // while it is empty, because a header that grows a line when the wording
+  // gets longer shoves the sky, the cards and the buttons down with it, and
+  // that happens every time the sun moves or the place is renamed.
   component HomeHeader: Item {
     id: header
-    height: Math.max(headerColumn.implicitHeight, headerTime.implicitHeight)
+    readonly property int sentenceHeight: Math.ceil(sentenceMetrics.height * 2)
+    readonly property int bannerHeight: Math.ceil(bannerMetrics.height)
+    height: Math.max(headerTime.implicitHeight,
+      sentenceHeight + Style.spacing.xs + bannerHeight)
+
+    FontMetrics {
+      id: sentenceMetrics
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.displayLarge
+    }
+    FontMetrics {
+      id: bannerMetrics
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.title
+    }
 
     Text {
       id: headerTime
@@ -756,23 +788,28 @@ Item {
 
       Text {
         width: parent.width
+        height: header.sentenceHeight
         textFormat: Text.PlainText
         text: root.home ? root.home.sentence : "Finding the sun..."
         color: root.foreground
         font.family: root.fontFamily
         font.pixelSize: Style.font.displayLarge
         wrapMode: Text.WordWrap
+        maximumLineCount: 2
+        elide: Text.ElideRight
+        verticalAlignment: Text.AlignTop
       }
       Text {
         width: parent.width
-        visible: root.scrubWords !== ""
+        height: header.bannerHeight
         textFormat: Text.PlainText
-        text: root.scrubWords + "."
+        text: root.scrubWords === "" ? "" : root.scrubWords + "."
         color: root.foreground
         font.family: root.fontFamily
         font.pixelSize: Style.font.title
         font.bold: true
-        wrapMode: Text.WordWrap
+        elide: Text.ElideRight
+        verticalAlignment: Text.AlignTop
       }
     }
   }
@@ -1164,9 +1201,15 @@ Item {
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: function(event) {
           var shift = (event.modifiers & Qt.ShiftModifier) !== 0
+          // The Me screen keeps its own keys on the field itself; here only
+          // Escape needs to reach out of it.
+          if (root.showMe && !root.playing) {
+            if (event.key === Qt.Key_Escape) { root.closeMe(); event.accepted = true }
+            return
+          }
           if (root.showPeople) {
             if (event.key === Qt.Key_Escape) {
-              if (root.peopleMode === "remove") root.peopleMode = "list"
+              if (root.peopleMode === "remove") root.cancelRemove()
               else root.closePeople()
             } else if (event.key === Qt.Key_P && root.peopleMode === "list") {
               root.closePeople()
@@ -1178,13 +1221,14 @@ Item {
               if (root.peopleMode === "remove") root.confirmRemove()
               else root.activateRow(root.peopleIndex)
             } else if ((event.key === Qt.Key_Delete || event.key === Qt.Key_Backspace) && root.peopleMode === "list") {
-              root.askRemove()
+              root.askRemoveAt(root.peopleIndex)
             }
             event.accepted = true
             return
           }
           if (event.key === Qt.Key_Escape) {
             if (root.playing) root.stopGame()
+            else if (root.showMe) root.closeMe()
             else if (root.scrubbing && root.clock) root.clock.resetScrub()
             else if (root.showGlobe) root.closeGlobe()
             else if (root.showMap) root.showMap = false
@@ -1201,7 +1245,7 @@ Item {
             event.accepted = true
           } else if (event.key === Qt.Key_Right || event.key === Qt.Key_Left) {
             var sign = event.key === Qt.Key_Right ? 1 : -1
-            if (root.playing) root.turn(sign * (shift ? 1 : 5))
+            if (root.playing) root.turn(sign * (shift ? 1 : root.gameStep))
             else if (root.clock) root.clock.scrub(sign * (shift ? 15 : 60))
             event.accepted = true
           } else if (event.key === Qt.Key_Up || event.key === Qt.Key_Down) {
@@ -1215,6 +1259,13 @@ Item {
             } else if (toolbar.onClock) {
               root.startGame()
             }
+            event.accepted = true
+          } else if (event.key === Qt.Key_R) {
+            if (root.playing) root.switchGameMode()
+            event.accepted = true
+          } else if (root.playing && root.currentRound && root.currentRound.mode === "read"
+              && event.key >= Qt.Key_1 && event.key <= Qt.Key_4) {
+            root.pickTime(event.key - Qt.Key_1)
             event.accepted = true
           } else if (event.key === Qt.Key_0 || event.key === Qt.Key_Home || event.key === Qt.Key_Space) {
             if (root.playing) {
@@ -1242,7 +1293,7 @@ Item {
         // ---- the clock
         Item {
           id: clockView
-          visible: !root.playing && !root.showMap && !root.showPeople && !root.showGlobe
+          visible: !root.playing && !root.showMap && !root.showPeople && !root.showMe && !root.showGlobe
           anchors.fill: parent
           anchors.bottomMargin: toolbar.height + content.gap
 
@@ -1485,7 +1536,7 @@ Item {
         // the shading means.
         Item {
           id: mapView
-          visible: !root.playing && root.showMap && !root.showPeople && !root.showGlobe
+          visible: !root.playing && root.showMap && !root.showPeople && !root.showMe && !root.showGlobe
           anchors.fill: parent
           anchors.bottomMargin: toolbar.height + content.gap
 
@@ -1523,10 +1574,176 @@ Item {
           }
         }
 
+        // ---- me: what home is called, and where it is. Its own screen, so
+        // the People list is only ever other people.
+        Item {
+          id: meView
+          visible: !root.playing && root.showMe
+          anchors.fill: parent
+          anchors.bottomMargin: toolbar.height + content.gap
+
+          Text {
+            id: meTitle
+            width: parent.width
+            textFormat: Text.PlainText
+            text: "Me"
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.displayLarge
+            font.bold: true
+          }
+
+          Text {
+            id: meNow
+            anchors.top: meTitle.bottom
+            anchors.topMargin: Style.spacing.xs
+            width: parent.width
+            textFormat: Text.PlainText
+            text: "Right now home is " + root.meName
+              + (root.meFromZone ? ", taken from the computer's time zone." : ".")
+            color: root.quiet
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.title
+            wrapMode: Text.WordWrap
+          }
+
+          Column {
+            anchors.top: meNow.bottom
+            anchors.topMargin: content.gap * 2
+            width: parent.width
+            spacing: Style.spacing.lg
+
+            Text {
+              width: parent.width
+              textFormat: Text.PlainText
+              text: "Where are we?"
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.display
+              wrapMode: Text.WordWrap
+            }
+
+            Rectangle {
+              width: Math.min(parent.width, Style.space(560))
+              height: Style.space(56)
+              radius: root.cornerRadius
+              color: Util.alpha(root.foreground, 0.06)
+              border.width: Math.max(1, Style.space(2))
+              border.color: root.sunColor
+
+              TextInput {
+                id: meField
+                anchors.fill: parent
+                anchors.leftMargin: Style.spacing.xl
+                anchors.rightMargin: Style.spacing.xl
+                verticalAlignment: TextInput.AlignVCenter
+                color: root.foreground
+                selectionColor: Util.alpha(root.sunColor, 0.5)
+                selectedTextColor: root.foreground
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.displayLarge
+                selectByMouse: true
+                maximumLength: 64
+                clip: true
+                text: root.meDraft
+                onTextEdited: root.meDraft = text
+                Keys.onPressed: function(event) {
+                  if (event.key === Qt.Key_Escape) { root.closeMe(); event.accepted = true }
+                  else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) { root.acceptMe(); event.accepted = true }
+                  else if (event.key === Qt.Key_Down) {
+                    root.meIndex = Math.min(Math.max(0, root.meOptions.length - 1), root.meIndex + 1)
+                    event.accepted = true
+                  } else if (event.key === Qt.Key_Up) {
+                    root.meIndex = Math.max(0, root.meIndex - 1)
+                    event.accepted = true
+                  }
+                }
+              }
+
+              Text {
+                anchors.fill: meField
+                verticalAlignment: Text.AlignVCenter
+                visible: meField.text === ""
+                textFormat: Text.PlainText
+                text: "a town, or whatever we call home"
+                color: Util.alpha(root.foreground, 0.66)
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.displayLarge
+              }
+            }
+
+            Text {
+              width: parent.width
+              textFormat: Text.PlainText
+              text: "Type anything: a town, a street, whatever we call the house. The clock here always follows the computer's own time zone; picking a place from the list also puts home on the map and the globe, and gives its sky the right sunrise."
+              color: root.quiet
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              wrapMode: Text.WordWrap
+            }
+
+            Column {
+              width: Math.min(parent.width, Style.space(560))
+              spacing: Style.spacing.xs
+
+              Repeater {
+                model: root.meOptions
+
+                Rectangle {
+                  id: meRow
+                  required property var modelData
+                  required property int index
+                  readonly property bool selected: root.meIndex === index
+                  width: parent.width
+                  height: Style.space(40)
+                  radius: root.cornerRadius
+                  color: selected ? Color.menu.selectedBackground : Util.alpha(root.foreground, 0.04)
+                  border.width: Math.max(1, Style.space(1))
+                  border.color: selected ? Util.alpha(root.sunColor, 0.8) : Util.alpha(root.foreground, 0.10)
+
+                  MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    hoverEnabled: true
+                    onEntered: root.meIndex = meRow.index
+                    onClicked: root.saveMe(meRow.modelData.key)
+                  }
+
+                  Text {
+                    anchors.left: parent.left
+                    anchors.leftMargin: Style.spacing.xl
+                    anchors.right: meHint.left
+                    anchors.rightMargin: Style.spacing.lg
+                    anchors.verticalCenter: parent.verticalCenter
+                    textFormat: Text.PlainText
+                    text: meRow.modelData.label
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.heading
+                    font.bold: meRow.selected
+                    elide: Text.ElideRight
+                  }
+                  Text {
+                    id: meHint
+                    anchors.right: parent.right
+                    anchors.rightMargin: Style.spacing.xl
+                    anchors.verticalCenter: parent.verticalCenter
+                    textFormat: Text.PlainText
+                    text: meRow.modelData.hint
+                    color: root.quiet
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                }
+              }
+            }
+          }
+        }
+
         // ---- people: the list, or the two questions of the add flow.
         Item {
           id: peopleView
-          visible: !root.playing && root.showPeople
+          visible: !root.playing && root.showPeople && !root.showMe
           anchors.fill: parent
           anchors.bottomMargin: toolbar.height + content.gap
 
@@ -1759,7 +1976,7 @@ Item {
                 visible: editField.text === ""
                 textFormat: Text.PlainText
                 text: root.peopleMode === "name" ? "Grandma, Nana, Uncle Ken..."
-                  : (root.placeFor === "home" ? "a town, or whatever we call home" : "a town or a city")
+                  : "a town or a city"
                 color: Util.alpha(root.foreground, 0.66)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.displayLarge
@@ -1849,7 +2066,7 @@ Item {
         // and on the right what the tapped place says.
         Item {
           id: globeView
-          visible: !root.playing && root.showGlobe && !root.showPeople
+          visible: !root.playing && root.showGlobe && !root.showPeople && !root.showMe
           anchors.fill: parent
           anchors.bottomMargin: toolbar.height + content.gap
           readonly property int globeSize: Math.max(Style.space(200), Math.min(height - spinRow.height - content.gap, Math.round(width * 0.54)))
@@ -1963,14 +2180,16 @@ Item {
           }
         }
 
-        // ---- the game: the face on the left, the words and the sky on the
-        // right, and four big buttons that turn the hands.
+        // ---- the game: the face on the left, the words on the right. Set
+        // the clock turns the hands; Read the clock offers four times to
+        // choose from. Nothing here knows about the sun.
         Item {
           id: gameArea
           visible: root.playing
           anchors.fill: parent
           anchors.bottomMargin: toolbar.height + content.gap
           readonly property int faceSize: Math.min(height, Math.round(width * 0.46))
+          readonly property bool reading: root.currentRound && root.currentRound.mode === "read"
 
           Face {
             id: gameFace
@@ -1978,7 +2197,9 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             width: gameArea.faceSize
             height: width
-            minutesOfDay: root.game ? root.game.minutesOfDay : 0
+            minutesOfDay: gameArea.reading
+              ? (root.currentRound ? root.currentRound.shownMinutes : 0)
+              : (root.game ? root.game.minutesOfDay : 0)
             solved: root.solved
           }
 
@@ -1987,19 +2208,8 @@ Item {
             anchors.left: gameFace.right
             anchors.leftMargin: content.gap * 3
             anchors.right: parent.right
-            anchors.top: parent.top
+            anchors.verticalCenter: parent.verticalCenter
             spacing: Style.spacing.md
-
-            Text {
-              width: parent.width
-              textFormat: Text.PlainText
-              text: root.currentRound ? root.currentRound.title + " in " + root.currentRound.city : ""
-              color: root.foreground
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.display
-              font.bold: true
-              elide: Text.ElideRight
-            }
 
             Text {
               width: parent.width
@@ -2007,15 +2217,18 @@ Item {
               text: root.currentRound ? root.currentRound.prompt : ""
               color: root.foreground
               font.family: root.fontFamily
-              font.pixelSize: Style.font.heading
+              font.pixelSize: Style.font.display
+              font.bold: true
               wrapMode: Text.WordWrap
             }
 
+            // Set the clock: the answer in digits as well as words, so the
+            // two ways of saying a time sit together.
             Text {
               width: parent.width
-              visible: text !== ""
+              visible: !gameArea.reading && text !== ""
               textFormat: Text.PlainText
-              text: root.currentRound ? root.currentRound.targetDigits : ""
+              text: root.currentRound && !gameArea.reading ? root.currentRound.digits : ""
               color: root.foreground
               font.family: root.fontFamily
               font.pixelSize: Style.font.displayLarge
@@ -2025,7 +2238,10 @@ Item {
             Text {
               width: parent.width
               textFormat: Text.PlainText
-              text: root.currentRound ? (root.solved ? root.currentRound.solvedSentence : root.currentRound.task) : ""
+              text: !root.currentRound ? ""
+                : (root.solved ? root.currentRound.solvedSentence
+                  : (root.wrongPick ? "Not that one. Look at the short hand first: which numeral has it just gone past?"
+                    : root.currentRound.task))
               color: root.solved ? root.sunColor : root.quiet
               font.family: root.fontFamily
               font.pixelSize: Style.font.heading
@@ -2033,40 +2249,101 @@ Item {
               Behavior on color { ColorAnimation { duration: 300 } }
             }
 
-            Sky {
-              id: gameSky
-              width: parent.width
-              height: Math.round(gameArea.height * 0.36)
-              isDay: root.game ? root.game.isDay : true
-              t: root.game ? root.game.t : 0.5
-              bodySize: Style.space(40)
-              showGoal: true
-              goalIsDay: root.currentRound ? root.currentRound.goalIsDay : true
-              goalT: root.currentRound ? root.currentRound.goalT : 0.5
-              goalHit: root.solved
-            }
-
+            // Set the clock: how far off the hands are, in words.
             Text {
               width: parent.width
-              visible: text !== ""
+              visible: !gameArea.reading && text !== ""
               textFormat: Text.PlainText
               text: !root.game || root.solved ? "" : root.game.hint
-              color: root.solved ? root.sunColor : root.foreground
+              color: root.foreground
               font.family: root.fontFamily
               font.pixelSize: Style.font.heading
               wrapMode: Text.WordWrap
             }
 
+            Item { width: 1; height: Style.spacing.lg }
+
+            // Set the clock: four buttons that turn the hands.
             Row {
+              visible: !gameArea.reading
               anchors.horizontalCenter: parent.horizontalCenter
               spacing: Style.spacing.xl
               TurnButton { glyph: "«"; caption: "an hour"; delta: -60 }
-              TurnButton { glyph: "‹"; caption: "5 minutes"; delta: -5 }
-              TurnButton { glyph: "›"; caption: "5 minutes"; delta: 5 }
+              TurnButton { glyph: "‹"; caption: root.stepWords; delta: -root.gameStep }
+              TurnButton { glyph: "›"; caption: root.stepWords; delta: root.gameStep }
               TurnButton { glyph: "»"; caption: "an hour"; delta: 60 }
+            }
+
+            // Read the clock: four times to choose between.
+            Grid {
+              id: choiceGrid
+              visible: gameArea.reading
+              width: parent.width
+              columns: 2
+              spacing: Style.spacing.lg
+              readonly property real cellW: (width - spacing) / 2
+
+              Repeater {
+                model: gameArea.reading && root.currentRound ? root.currentRound.choices.length : 0
+
+                Rectangle {
+                  id: choiceTile
+                  required property int index
+                  readonly property var choice: root.currentRound.choices[index]
+                  readonly property bool picked: root.chosen === index
+                  readonly property bool correct: picked && choice.right
+                  readonly property bool mistaken: picked && !choice.right
+                  width: choiceGrid.cellW
+                  height: Style.space(76)
+                  radius: root.cornerRadius
+                  color: correct ? Util.alpha(root.sunColor, 0.22)
+                    : (mistaken ? Util.alpha(root.foreground, 0.10) : Util.alpha(root.foreground, 0.05))
+                  border.width: Math.max(2, Style.space(2))
+                  border.color: correct ? root.sunColor
+                    : (mistaken ? Util.alpha(root.foreground, 0.30) : Util.alpha(root.foreground, 0.18))
+                  opacity: root.solved && !correct ? 0.4 : 1
+                  Behavior on color { ColorAnimation { duration: 160 } }
+                  Behavior on opacity { NumberAnimation { duration: 160 } }
+
+                  MouseArea {
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.pickTime(choiceTile.index)
+                  }
+
+                  Column {
+                    anchors.centerIn: parent
+                    width: parent.width - Style.spacing.xl * 2
+                    spacing: Style.spacing.xs
+
+                    Text {
+                      width: parent.width
+                      horizontalAlignment: Text.AlignHCenter
+                      textFormat: Text.PlainText
+                      text: choiceTile.choice.words
+                      color: root.foreground
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.heading
+                      font.bold: true
+                      elide: Text.ElideRight
+                    }
+                    Text {
+                      width: parent.width
+                      horizontalAlignment: Text.AlignHCenter
+                      textFormat: Text.PlainText
+                      text: choiceTile.choice.digits
+                      color: root.quiet
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.title
+                    }
+                  }
+                }
+              }
             }
           }
         }
+
 
         // ---- the buttons: what can be done from here on the left, Close on
         // the right. Only the buttons that mean something now are shown, and
@@ -2078,9 +2355,9 @@ Item {
           anchors.bottom: parent.bottom
           height: Math.max(actions.implicitHeight, closeButton.implicitHeight)
 
-          readonly property bool onClock: !root.playing && !root.showPeople && !root.showGlobe && !root.showMap
-          readonly property bool onMap: !root.playing && !root.showPeople && !root.showGlobe && root.showMap
-          readonly property bool onGlobe: !root.playing && !root.showPeople && root.showGlobe
+          readonly property bool onClock: !root.playing && !root.showPeople && !root.showMe && !root.showGlobe && !root.showMap
+          readonly property bool onMap: !root.playing && !root.showPeople && !root.showMe && !root.showGlobe && root.showMap
+          readonly property bool onGlobe: !root.playing && !root.showPeople && !root.showMe && root.showGlobe
           readonly property bool onWorld: onClock || onMap || onGlobe
           readonly property bool onList: root.showPeople && (root.peopleMode === "list" || root.peopleMode === "remove")
           readonly property bool editing: root.showPeople && (root.peopleMode === "name" || root.peopleMode === "place")
@@ -2100,9 +2377,25 @@ Item {
             ActionButton { visible: toolbar.onClock && root.hasMap; text: "Map"; onClicked: { root.showGlobe = false; root.showMap = true } }
             ActionButton { visible: toolbar.onClock || toolbar.onMap; text: "Globe"; onClicked: root.openGlobe() }
             ActionButton { visible: toolbar.onClock || toolbar.onMap; text: "People"; onClicked: root.openPeople() }
+            ActionButton { visible: toolbar.onClock; text: "Me"; onClicked: root.openMe() }
             ActionButton { visible: toolbar.onGlobe; text: "Find home"; onClicked: root.centreGlobeOnHome() }
             ActionButton { visible: toolbar.onMap; text: "Clock"; onClicked: root.showMap = false }
             ActionButton { visible: toolbar.onGlobe; text: "Clock"; onClicked: root.closeGlobe() }
+
+            // The Me screen.
+            ActionButton { visible: root.showMe && !root.playing; text: "←  Clock"; onClicked: root.closeMe() }
+            ActionButton {
+              visible: root.showMe && !root.playing && !root.meFromZone
+              text: "Use the computer's zone"
+              onClicked: root.useSystemZone()
+            }
+            ActionButton {
+              visible: root.showMe && !root.playing
+              primary: true
+              enabled: root.meOptions.length > 0
+              text: "Save"
+              onClicked: root.acceptMe()
+            }
 
             // The People screen.
             ActionButton { visible: toolbar.onList; text: "←  Clock"; onClicked: root.closePeople() }
@@ -2122,13 +2415,19 @@ Item {
               onClicked: root.editAccept()
             }
 
-            // The game.
+            // The game: leave, start the hands over, swap the two rounds, and
+            // once it is won, another one.
             ActionButton { visible: root.playing; text: "←  Clock"; onClicked: root.stopGame() }
-            ActionButton { visible: root.playing; text: "Start again"; onClicked: if (root.currentRound) root.hands = root.currentRound.startHands }
+            ActionButton {
+              visible: root.playing && root.gameMode === "set" && !root.solved
+              text: "Start again"
+              onClicked: if (root.currentRound) root.hands = root.currentRound.startHands
+            }
+            ActionButton { visible: root.playing; text: root.otherModeName; onClicked: root.switchGameMode() }
             ActionButton {
               visible: root.playing && root.solved
               primary: true
-              text: root.currentRound && root.nextName === root.currentRound.name ? "Play again" : root.nextName + " next  →"
+              text: "Another one  →"
               onClicked: root.nextRound()
             }
           }

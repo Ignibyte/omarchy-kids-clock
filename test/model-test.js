@@ -186,82 +186,114 @@ check("the face: rounding, hand angles and the words for a time", () => {
   assert.strictEqual(Model.bandRules("navigator").gameStep, 5)
 })
 
-check("the round home plays against itself is in the second person", () => {
-  const routine = Model.routineFrom({})
-  const home = { name: "Chicago", city: "Chicago", zone: "America/Chicago", lat: 41.88, lon: -87.63, self: true }
-  const round = Model.gameRound(home, { offsetSeconds: -18000 }, Date.parse("2026-09-09T13:40:00Z"),
-    routine, Model.bandRules("navigator"), "12")
-  assert.strictEqual(round.title, "Your clock")
-  assert.ok(round.prompt.endsWith(" here."))
-  assert.ok(round.solvedSentence.indexOf("You are probably ") !== -1)
+// A repeatable stand-in for Math.random, so a round's shape can be asserted.
+function stream(values) {
+  let i = 0
+  return () => values[i++ % values.length]
+}
 
-  const grandma = { name: "Grandma", city: "Phoenix", zone: "America/Phoenix", lat: 33.45, lon: -112.07 }
-  const other = Model.gameRound(grandma, { offsetSeconds: -25200 }, Date.parse("2026-09-09T13:40:00Z"),
-    routine, Model.bandRules("navigator"), "12")
-  assert.strictEqual(other.title, "Grandma's clock")
-  assert.ok(other.prompt.indexOf(" in Phoenix.") !== -1)
-  assert.ok(other.solvedSentence.indexOf("Grandma is probably ") !== -1)
-})
+check("set the clock: a random time on the band's step, hands starting at twelve", () => {
+  const tinkerer = Model.setRound(Model.bandRules("tinkerer"), "12", stream([0.31]))
+  assert.strictEqual(tinkerer.mode, "set")
+  assert.strictEqual(tinkerer.targetMinutes % 15, 0, "the tinkerer band asks for quarter hours")
+  assert.ok(tinkerer.targetMinutes >= 0 && tinkerer.targetMinutes < 720, "a dial time, not a day time")
+  assert.strictEqual(tinkerer.prompt, "Set the clock to " + Model.clockWords(tinkerer.targetMinutes) + ".")
+  assert.strictEqual(tinkerer.startHands, tinkerer.targetMinutes === 0 ? 540 : 0)
 
-check("a game round freezes the person's time, rounds it and starts the hands at twelve", () => {
-  const frozen = Date.UTC(2026, 8, 5, 21, 37) // Saturday 14:37 in Phoenix, Sunday 06:37 in Tokyo
-  const routine = Model.routineFrom({})
-  const grandma = Model.parsePeople("Grandma=Phoenix", cities, 3)[0]
-  const tinkerer = Model.gameRound(grandma, { offsetSeconds: -7 * 3600 }, frozen, routine, Model.bandRules("tinkerer"), "12")
-  assert.strictEqual(tinkerer.exactMinutes, 14 * 60 + 37)
-  assert.strictEqual(tinkerer.targetMinutes, 14 * 60 + 30)
-  assert.strictEqual(tinkerer.startHands, 720)
-  assert.strictEqual(tinkerer.targetWords, "half past two in the afternoon")
-  assert.strictEqual(tinkerer.targetDigits, "2:30 PM")
-  assert.strictEqual(tinkerer.prompt, "It's about half past two in the afternoon in Phoenix.")
-  assert.strictEqual(tinkerer.task, "Turn the hands until the sun sits in the ring.")
-  assert.strictEqual(tinkerer.solvedSentence, "That's it! In Phoenix it's about half past two in the afternoon. Grandma is probably playing, it's the weekend.")
-  assert.strictEqual(tinkerer.goalIsDay, true)
-  const navigator = Model.gameRound(grandma, { offsetSeconds: -7 * 3600 }, frozen, routine, Model.bandRules("navigator"), "24")
-  assert.strictEqual(navigator.targetMinutes, 14 * 60 + 35)
-  assert.strictEqual(navigator.targetWords, "twenty-five to three in the afternoon")
-  assert.strictEqual(navigator.targetDigits, "14:35")
-  const ken = Model.parsePeople("Uncle Ken=Tokyo", cities, 3)[0]
-  const tokyo = Model.gameRound(ken, { offsetSeconds: 9 * 3600 }, frozen, routine, Model.bandRules("tinkerer"), "12")
-  assert.strictEqual(tokyo.targetMinutes, 6 * 60 + 30)
-  assert.strictEqual(tokyo.startHands, 0)
-  assert.strictEqual(tokyo.targetWords, "half past six in the morning")
-  assert.strictEqual(tokyo.goalIsDay, true, "the sun is up in Tokyo at half past six in September")
-  // A target of noon exactly cannot start at noon.
-  const noon = Model.gameRound(grandma, { offsetSeconds: -7 * 3600 }, Date.UTC(2026, 8, 5, 19, 0), routine, Model.bandRules("tinkerer"), "12")
-  assert.strictEqual(noon.targetMinutes, 720)
+  const navigator = Model.setRound(Model.bandRules("navigator"), "12", stream([0.77]))
+  assert.strictEqual(navigator.targetMinutes % 5, 0, "the navigator band works in five minutes")
+
+  // Twelve o'clock cannot start on twelve, or the round is already won.
+  const noon = Model.setRound(Model.bandRules("navigator"), "12", stream([0]))
+  assert.strictEqual(noon.targetMinutes, 0)
   assert.strictEqual(noon.startHands, 540)
 })
 
-check("the game view follows the hands, hints the shortest way and knows the twelve-hour trap", () => {
-  const frozen = Date.UTC(2026, 8, 5, 21, 37)
-  const grandma = Model.parsePeople("Grandma=Phoenix", cities, 3)[0]
-  const round = Model.gameRound(grandma, { offsetSeconds: -7 * 3600 }, frozen, Model.routineFrom({}), Model.bandRules("tinkerer"), "12")
-  const start = Model.gameView(round, round.startHands)
-  assert.strictEqual(start.solved, false)
-  assert.strictEqual(start.delta, 150)
-  assert.strictEqual(start.hint, "Turn the hands forward.")
-  assert.deepStrictEqual(start.angles, { hour: 0, minute: 0 })
-  assert.strictEqual(start.isDay, true)
-  assert.ok(start.t < round.goalT, "noon's sun sits earlier on the arc than half past two's")
-  const near = Model.gameView(round, 855)
-  assert.strictEqual(near.hint, "Nearly. A little further on.")
-  const past = Model.gameView(round, 900)
-  assert.strictEqual(past.delta, -30)
-  assert.strictEqual(past.hint, "Nearly. A little back.")
-  const done = Model.gameView(round, 870)
-  assert.strictEqual(done.solved, true)
-  assert.ok(Math.abs(done.t - round.goalT) < 1e-9, "the sun lands in the ring")
-  assert.strictEqual(Model.gameView(round, 870 + 1440).solved, true, "a full turn past midnight still counts")
-  const trap = Model.gameView(round, 150)
-  assert.strictEqual(trap.solved, false)
-  assert.deepStrictEqual(trap.angles, Model.handAngles(870))
-  assert.strictEqual(trap.isDay, false, "half past two at night shows the moon")
-  assert.ok(trap.hint.indexOf("wrong half of the day") > 0, trap.hint)
-  const wayBack = Model.gameView(round, 1300)
-  assert.strictEqual(wayBack.delta, -430)
-  assert.strictEqual(wayBack.hint, "Turn the hands back.")
+check("the digits in the game carry no AM or PM, because a dial has none", () => {
+  assert.strictEqual(Model.faceDigits(0), "12:00")
+  assert.strictEqual(Model.faceDigits(15 * 60 + 5), "3:05", "afternoon reads off the same dial")
+  assert.strictEqual(Model.faceDigits(719), "11:59")
+  const round = Model.setRound(Model.bandRules("navigator"), "12", stream([0.5]))
+  assert.ok(!/AM|PM/.test(round.digits), round.digits)
 })
+
+check("read the clock: four times, exactly one right, all on the band's step", () => {
+  const round = Model.readRound(Model.bandRules("navigator"), "12", stream([0.31, 0.77, 0.12, 0.55, 0.9, 0.4]))
+  assert.strictEqual(round.mode, "read")
+  assert.strictEqual(round.choices.length, 4)
+  assert.strictEqual(round.choices.filter(c => c.right).length, 1)
+  const right = round.choices.find(c => c.right)
+  assert.strictEqual(right.minutes, round.shownMinutes)
+  assert.strictEqual(right.words, Model.clockWords(round.shownMinutes))
+  const seen = new Set(round.choices.map(c => c.minutes))
+  assert.strictEqual(seen.size, 4, "no time is offered twice")
+  round.choices.forEach(c => {
+    assert.strictEqual(c.minutes % 5, 0)
+    assert.ok(c.minutes >= 0 && c.minutes < 720)
+  })
+
+  const tinkerer = Model.readRound(Model.bandRules("tinkerer"), "12", stream([0.2, 0.6, 0.1, 0.8, 0.35, 0.45]))
+  tinkerer.choices.forEach(c => assert.strictEqual(c.minutes % 15, 0, "quarter hours only on that band"))
+})
+
+check("the wrong answers are the mistakes a child actually makes", () => {
+  // Quarter past three: an hour either way, quarter to three, and the hands
+  // read the wrong way round.
+  const wrong = Model.readDistractors(3 * 60 + 15, 5)
+  assert.ok(wrong.indexOf(4 * 60 + 15) !== -1, "an hour on")
+  assert.ok(wrong.indexOf(2 * 60 + 15) !== -1, "an hour back")
+  assert.ok(wrong.indexOf(3 * 60 + 45) !== -1, "past read as to")
+  assert.ok(wrong.indexOf(3 * 60 + 15) === -1, "never the right answer")
+  assert.ok(wrong.length >= 3, "always enough to fill the other three")
+  Model.readDistractors(0, 15).forEach(m => assert.strictEqual(m % 15, 0))
+})
+
+check("two rounds in a row are never the same time", () => {
+  const rules = Model.bandRules("navigator")
+  const same = () => 0.25
+  const first = Model.setRound(rules, "12", same)
+  const second = Model.setRound(rules, "12", same, first.targetMinutes)
+  assert.notStrictEqual(second.targetMinutes, first.targetMinutes)
+})
+
+check("the game view follows the hands and hints the shortest way round", () => {
+  const round = Model.setRound(Model.bandRules("tinkerer"), "12", stream([0.5]))
+  const target = round.targetMinutes
+
+  assert.strictEqual(Model.gameView(round, target).solved, true)
+  assert.strictEqual(Model.gameView(round, target).hint, "That's it!")
+  // A dial repeats every twelve hours, so a full turn round is the same time.
+  assert.strictEqual(Model.gameView(round, target + 720).solved, true,
+    "no half-of-the-day trap any more: the hands are the whole answer")
+  assert.strictEqual(Model.gameView(round, target + 1440).solved, true)
+
+  const near = Model.gameView(round, target - 15)
+  assert.strictEqual(near.hint, "Nearly. A little further on.")
+  const nearBack = Model.gameView(round, target + 15)
+  assert.strictEqual(nearBack.hint, "Nearly. A little back.")
+  const far = Model.gameView(round, target - 180)
+  assert.strictEqual(far.hint, "Turn the hands forward.")
+
+  assert.deepStrictEqual(Model.gameView(round, target).angles, Model.handAngles(target))
+  assert.ok(Model.gameView(round, target + 720).minutesOfDay < 720, "the face only ever shows a dial time")
+})
+
+check("a person is removed by who they are, not by the row they were on", () => {
+  let people = "Grandma=Phoenix; Uncle Ken=Tokyo; Nana=Sydney"
+  assert.strictEqual(Model.indexOfPerson(people, "Uncle Ken", "Tokyo"), 1)
+  assert.strictEqual(Model.indexOfPerson(people, "Nobody", "Nowhere"), -1)
+  // Always taking the top row empties the list, last one included.
+  for (let n = 0; n < 3; n++) {
+    const first = Model.parsePeopleRaw(people)[0]
+    people = Model.removePerson(people, Model.indexOfPerson(people, first.name, first.where))
+  }
+  assert.strictEqual(people, "")
+  // And out of the middle, where a stale row index would take the wrong one.
+  let middle = "A=Phoenix; B=Tokyo; C=Sydney"
+  middle = Model.removePerson(middle, Model.indexOfPerson(middle, "B", "Tokyo"))
+  assert.strictEqual(middle, "A=Phoenix; C=Sydney")
+})
+
 
 check("the subsolar point and the night side follow the clock and the season", () => {
   const june = Model.subsolarPoint(Date.UTC(2026, 5, 21, 12, 0))
