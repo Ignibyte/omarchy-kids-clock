@@ -271,6 +271,15 @@ function indexOfPerson(text, name, where) {
   return -1
 }
 
+// Change who a person is and where they live, in place, so editing keeps
+// their position in the list rather than sending them to the end of it.
+function replacePerson(text, index, name, where) {
+  var entries = parsePeopleRaw(text)
+  if (index < 0 || index >= entries.length) return peopleString(entries)
+  entries[index] = { name: name, where: where }
+  return peopleString(entries)
+}
+
 function removePerson(text, index) {
   var entries = parsePeopleRaw(text)
   if (index < 0 || index >= entries.length) return peopleString(entries)
@@ -1178,6 +1187,7 @@ if (typeof module !== "undefined") {
     peopleString: peopleString,
     addPerson: addPerson,
     removePerson: removePerson,
+    replacePerson: replacePerson,
     indexOfPerson: indexOfPerson,
     DEFAULT_PEOPLE: DEFAULT_PEOPLE,
     SUN_GLYPH: SUN_GLYPH,

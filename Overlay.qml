@@ -297,6 +297,10 @@ Item {
   property bool showPeople: false
   property string peopleMode: "list"   // list, name, place, remove
   property int peopleIndex: 1
+  // Which person the add flow is about. -1 is a new one; anything else is
+  // that row being edited, and saving puts them back where they were rather
+  // than at the end of the list.
+  property int editingIndex: -1
   property string draftName: ""
   property string draftWhere: ""
   property int matchIndex: 0
@@ -367,6 +371,7 @@ Item {
     showMe = false
     peopleMode = "list"
     pending = null
+    editingIndex = -1
     peopleIndex = 0
     showPeople = true
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
@@ -384,8 +389,19 @@ Item {
 
   function beginAdd() {
     if (storedPeople.length >= mostPeople) return
+    editingIndex = -1
     draftName = ""
     draftWhere = ""
+    peopleMode = "name"
+    focusEditField()
+  }
+
+  // The same two questions as adding, with the answers already in them.
+  function beginEdit(index) {
+    if (index < 0 || index >= storedPeople.length) return
+    editingIndex = index
+    draftName = storedPeople[index].name
+    draftWhere = storedPeople[index].where
     peopleMode = "name"
     focusEditField()
   }
@@ -399,6 +415,7 @@ Item {
   }
 
   function backToList() {
+    editingIndex = -1
     peopleMode = "list"
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
@@ -410,9 +427,14 @@ Item {
 
   function savePlace(whereKey) {
     if (!clock) return
-    persistSettings({ people: Model.addPerson(clock.peopleText, draftName, whereKey) })
+    var at = editingIndex
+    persistSettings({ people: at >= 0
+      ? Model.replacePerson(clock.peopleText, at, draftName, whereKey)
+      : Model.addPerson(clock.peopleText, draftName, whereKey) })
     backToList()
-    Qt.callLater(function() { peopleIndex = Math.max(0, storedPeople.length - 1) })
+    Qt.callLater(function() {
+      peopleIndex = at >= 0 ? at : Math.max(0, storedPeople.length - 1)
+    })
   }
 
   function pickMatch(index) {
@@ -434,6 +456,7 @@ Item {
   function activateRow(index) {
     peopleIndex = index
     if (index === storedPeople.length) beginAdd()
+    else beginEdit(index)
   }
 
   // The person waiting to be removed is held by name and place, not by the
@@ -2276,6 +2299,13 @@ Item {
                     color: root.quiet
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.title
+                  }
+                  ActionButton {
+                    visible: personRow.isPerson && !personRow.confirming
+                    anchors.verticalCenter: parent.verticalCenter
+                    compact: true
+                    text: "Edit"
+                    onClicked: root.beginEdit(personRow.index)
                   }
                   ActionButton {
                     visible: personRow.isPerson && !personRow.confirming

@@ -311,6 +311,22 @@ check("a saved entry is believed until the shell's own copy says the same", () =
   assert.strictEqual(Model.settingsLanded({ id: "x" }, null), true, "nothing pending")
 })
 
+check("a person can be edited in place, keeping their turn on the clock", () => {
+  const people = "Grandma=Phoenix; Uncle Ken=Tokyo; Nana=Sydney"
+  // A new place for the same person.
+  assert.strictEqual(Model.replacePerson(people, 1, "Uncle Ken", "Osaka"),
+    "Grandma=Phoenix; Uncle Ken=Osaka; Nana=Sydney")
+  // And a new name, still second on the clock rather than last.
+  assert.strictEqual(Model.replacePerson(people, 1, "Ken", "Tokyo"),
+    "Grandma=Phoenix; Ken=Tokyo; Nana=Sydney")
+  // The same cleaning as everywhere else, and an index off the end changes
+  // nobody.
+  assert.strictEqual(Model.replacePerson(people, 0, "Gran;ny", "Phoenix"),
+    "Gran ny=Phoenix; Uncle Ken=Tokyo; Nana=Sydney")
+  assert.strictEqual(Model.replacePerson(people, 9, "Nobody", "Nowhere"), people)
+  assert.strictEqual(Model.replacePerson(people, -1, "Nobody", "Nowhere"), people)
+})
+
 check("a person is removed by who they are, not by the row they were on", () => {
   let people = "Grandma=Phoenix; Uncle Ken=Tokyo; Nana=Sydney"
   assert.strictEqual(Model.indexOfPerson(people, "Uncle Ken", "Tokyo"), 1)

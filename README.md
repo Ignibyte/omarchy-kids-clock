@@ -153,7 +153,9 @@ letters of the town or city and pick it from the matches; about 1,460
 places are built in, and a name shared by several places, such as Portland,
 is stored with its region so it comes back as itself. A place that is not
 in the list can be given as a time zone, such as `America/Phoenix`. Each
-person has a Remove button that asks once.
+person has an Edit button, which asks the same two questions with the answers
+already in them and puts them back in the same place on the clock rather than
+at the end; tapping the row does the same. Remove asks once.
 
 Home is not in this list. It has its own screen.
 
@@ -240,6 +242,7 @@ the field they finish.
 | On the screen | Does |
 |---|---|
 | a person's card | opens that person's page |
+| Edit, Remove | on a person's row: change who they are and where they live, or take them off |
 | ←, →, Now | move the sun an hour, and put it back. On the clock they sit under the face, which is the thing they move; at the top of Times on Earth otherwise. All three are always there, so the row never shifts under a hand |
 | Globe, Flat map | the two ways of looking at Times on Earth (the flat map is navigator) |
 | the house | turns the globe back to home; it sits between the two buttons that turn it |
