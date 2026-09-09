@@ -71,9 +71,13 @@ the sun here too, and the night sweeps round the globe as it goes.
 ### The flat map
 
 On the Navigator band, Flat map lays the world out flat with the
-night side shaded. The top of the screen does not change when the view does:
-the same title, the same switch, the same Earlier and Later. Only the world
-below it is drawn differently. The shade is the real one for the shown instant, worked
+night side shaded. It carries the same places as the globe — home, the people
+and the fifty well-known cities — as dots to tap, and a line under the map
+says what time it is at the one you tapped.
+
+The top of the screen does not change when the view does: the same title, the
+same switch, the same Earlier, Later and Now. Only the world below it is drawn
+differently. The shade is the real one for the shown instant, worked
 out from the sun's declination and Greenwich solar noon, so it leans towards
 one pole in December and the other in June, and it sweeps west as Earlier
 and Later move the sun. A sun marks where the sun is straight overhead, a moon
@@ -210,10 +214,9 @@ the field they finish.
 
 | On the screen | Does |
 |---|---|
-| Earlier, Later | move the sun an hour, under the sky on the clock and at the top of Times on Earth |
-| Back to now | appears once the sun has moved, and puts it back |
+| Earlier, Later, Now | move the sun an hour, and put it back. On the clock they sit under the face, which is the thing they move; at the top of Times on Earth otherwise. All three are always there, so the row never shifts under a hand |
 | Globe, Flat map | the two ways of looking at Times on Earth (the flat map is navigator) |
-| Find home | turns the globe back to home; it sits under the globe, with the buttons that turn it |
+| Find home | turns the globe back to home; it sits between the two buttons that turn it |
 | Set the clock, Read the clock | the two rounds of the game |
 | Start again, Another one | put the hands back where they began, and take a new round |
 | Next, Save | finish the question the field is asking |

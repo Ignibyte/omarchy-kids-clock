@@ -113,6 +113,17 @@ Item {
   readonly property var popular: Model.popularSpots(cities)
   readonly property var spots: clock ? Model.globeSpotList(clock.homeName, clock.homeCity, clock.people, popular) : []
   readonly property var picked: pickedSpot >= 0 && pickedSpot < spots.length ? spots[pickedSpot] : null
+  // The spots the flat map draws as plain dots: everything that is not home
+  // or one of the people, since those already have a named marker there.
+  readonly property var mapSpots: {
+    var out = []
+    if (!showMap) return out
+    for (var i = 0; i < spots.length; i++) {
+      if (spots[i].kind === "home" || spots[i].kind === "person") continue
+      out.push({ at: i, lat: spots[i].lat, lon: spots[i].lon })
+    }
+    return out
+  }
   readonly property var pickedOffset: !picked || !clock ? null
     : (picked.kind === "home" ? { offsetSeconds: clock.homeOffsetSeconds } : (clock.offsets ? clock.offsets[picked.zone] : null))
   readonly property var pickedView: picked && clock
@@ -122,6 +133,10 @@ Item {
   // Opened before the city list or the home zone has loaded, the globe has
   // no home to centre on; when home turns up it goes there and picks it.
   onSpotsChanged: {
+    // The list fills in after the city file and the home zone land, which is
+    // usually after the screen is already open, so this is where both views
+    // ask for the offsets they are about to need.
+    if (showEarth && spots.length > 0) askForSpotZones()
     if (!showGlobe || globeAtHome || spots.length === 0 || spots[0].kind !== "home") return
     var wasDragging = globeDragging
     globeDragging = true
@@ -151,6 +166,7 @@ Item {
     earthMode = String(mode) === "map" && hasMap ? "map" : "globe"
     showEarth = true
     if (earthMode === "globe") settleGlobe()
+    else askForSpotZones()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -159,6 +175,13 @@ Item {
     if (next === earthMode) return
     earthMode = next
     if (next === "globe") settleGlobe()
+    else askForSpotZones()
+  }
+
+  // The flat map can be asked about the same places as the globe, so it needs
+  // their offsets too.
+  function askForSpotZones() {
+    if (clock && typeof clock.requestZones === "function") clock.requestZones(spotZones())
   }
 
   function settleGlobe() {
@@ -649,6 +672,9 @@ Item {
     property var night: []
     property var sun: null
     property var markers: []
+    // The well-known cities, as indexes into root.spots so a tap can pick one
+    // the same way tapping the globe does.
+    property var spots: []
     clip: true
     readonly property string landPath: Model.landPath(land, width, height)
     readonly property string nightPath: Model.pointsPath(night, width, height)
@@ -708,6 +734,40 @@ Item {
       y: map.moonPos[1] - height / 2
       Behavior on x { NumberAnimation { duration: 420; easing.type: Easing.OutCubic } }
       Behavior on y { NumberAnimation { duration: 420; easing.type: Easing.OutCubic } }
+    }
+
+    // The cities behind the named markers: small, plain, and tappable.
+    Repeater {
+      model: map.spots.length
+      Item {
+        id: spotDot
+        required property int index
+        readonly property var spot: map.spots[index]
+        readonly property bool chosen: root.pickedSpot === spot.at
+        readonly property var pos: Model.mapPoint(spot.lon, spot.lat, map.width, map.height)
+        x: pos[0]
+        y: pos[1]
+
+        Rectangle {
+          anchors.centerIn: parent
+          width: Style.space(spotDot.chosen ? 14 : 9)
+          height: width
+          radius: width / 2
+          color: spotDot.chosen ? root.sunColor : Util.alpha(root.foreground, 0.55)
+          border.width: spotDot.chosen ? Math.max(2, Style.space(2)) : 0
+          border.color: root.foreground
+          Behavior on width { NumberAnimation { duration: 140 } }
+        }
+
+        MouseArea {
+          anchors.centerIn: parent
+          width: Style.space(28)
+          height: width
+          hoverEnabled: true
+          cursorShape: Qt.PointingHandCursor
+          onClicked: root.pickSpot(spotDot.spot.at)
+        }
+      }
     }
 
     Repeater {
@@ -1184,9 +1244,9 @@ Item {
     ActionButton { compact: true; text: "Later  →"; onClicked: if (root.clock) root.clock.scrub(60) }
     ActionButton {
       compact: true
-      primary: true
-      visible: root.scrubbing
-      text: "Back to now"
+      primary: root.scrubbing
+      enabled: root.scrubbing
+      text: "Now"
       onClicked: if (root.clock) root.clock.resetScrub()
     }
   }
@@ -1331,7 +1391,7 @@ Item {
         anchors.leftMargin: card.contentLeftInset
 
         readonly property int gap: Style.spacing.lg
-        readonly property int homeSkyHeight: Math.round(root.cardHeight * (root.hasFace ? 0.27 : 0.25))
+        readonly property int homeSkyHeight: Math.round(root.cardHeight * (root.hasFace ? 0.235 : 0.22))
 
         // ---- the clock
         Item {
@@ -1409,11 +1469,15 @@ Item {
 
           // Moving the sun belongs to the sky, so the two buttons sit under
           // it rather than in the navigation at the foot of the card.
+          // Under the clock, which means under the face when there is one:
+          // the buttons move the time, and the face is the time.
           SunRow {
             id: sunRow
             anchors.top: homeArea.bottom
             anchors.topMargin: Style.spacing.md
-            anchors.left: parent.left
+            x: homeFace.visible
+              ? Math.max(0, Math.round(homeArea.x + homeFace.x + homeFace.width / 2 - width / 2))
+              : 0
           }
 
           // One card per person, side by side.
@@ -1628,12 +1692,48 @@ Item {
             id: worldMap
             anchors.top: parent.top
             anchors.horizontalCenter: parent.horizontalCenter
-            width: Math.min(parent.width, Math.floor(parent.height * 2))
+            width: Math.min(parent.width, Math.floor((parent.height - mapPick.height - content.gap) * 2))
             height: Math.round(width / 2)
             land: root.land
             night: root.night
             sun: root.sun
             markers: root.markers
+            spots: root.mapSpots
+          }
+
+          // What was tapped, said the same way the globe says it.
+          Text {
+            id: mapPick
+            anchors.top: worldMap.bottom
+            anchors.topMargin: content.gap
+            anchors.left: parent.left
+            anchors.right: parent.right
+            textFormat: Text.PlainText
+            // Short enough for one line: the place, the digits when the band
+            // has them, and the time in words. The globe has the room for the
+            // whole sentence; the map does not.
+            text: !root.pickedView ? "Tap a place to hear the time there."
+              : root.pickedView.name
+                + (root.pickedView.timeText === "" ? "" : "  ·  " + root.pickedView.timeText)
+                + (root.pickedView.dayLabel === "" || root.pickedView.dayLabel === "today"
+                  ? "" : "  ·  " + root.pickedView.dayLabel)
+                + (root.pickedView.timeWords === "" ? "" : "  ·  " + root.pickedView.timeWords)
+            color: root.pickedView ? root.foreground : root.quiet
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.title
+            // Two lines whatever it says, so tapping around the map does not
+            // shuffle the map itself up and down.
+            height: Math.ceil(pickMetrics.height * 2)
+            wrapMode: Text.WordWrap
+            maximumLineCount: 2
+            elide: Text.ElideRight
+            verticalAlignment: Text.AlignTop
+
+            FontMetrics {
+              id: pickMetrics
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.title
+            }
           }
         }
 
@@ -2169,8 +2269,7 @@ Item {
           // buttons and Find home, which belongs to the globe rather than to
           // the header the flat map shares.
           readonly property int globeSize: Math.max(Style.space(200),
-            Math.min(height - spinRow.height - findHome.height - Style.spacing.sm - content.gap,
-              Math.round(width * 0.54)))
+            Math.min(height - spinRow.height - content.gap, Math.round(width * 0.54)))
 
           Globe {
             id: theGlobe
@@ -2199,19 +2298,16 @@ Item {
             anchors.horizontalCenter: theGlobe.horizontalCenter
             anchors.top: theGlobe.bottom
             anchors.topMargin: Style.spacing.sm
-            spacing: Style.spacing.xxl * 2
+            spacing: Style.spacing.xl
             TurnButton { glyph: "‹"; caption: "turn it"; delta: -40; spins: true }
+            ActionButton {
+              id: findHome
+              anchors.verticalCenter: parent.verticalCenter
+              compact: true
+              text: "Find home"
+              onClicked: root.centreGlobeOnHome()
+            }
             TurnButton { glyph: "›"; caption: "turn it"; delta: 40; spins: true }
-          }
-
-          ActionButton {
-            id: findHome
-            anchors.horizontalCenter: spinRow.horizontalCenter
-            anchors.top: spinRow.bottom
-            anchors.topMargin: Style.spacing.sm
-            compact: true
-            text: "Find home"
-            onClicked: root.centreGlobeOnHome()
           }
 
           Column {

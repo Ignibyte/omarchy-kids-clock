@@ -37,29 +37,25 @@ Item {
   // that stale entry and put them back. So the plugin believes its own write
   // until the shell agrees with it.
   property var pendingEntry: null
+  // The shell's entry as it read when the write went out. The shell hands out
+  // a fresh config object on every change anywhere in the bar, so "it changed"
+  // is not the question; "did our entry change" is.
+  property string pendingBaseline: ""
 
   function noteSaved(entry) {
     pendingEntry = entry && typeof entry === "object" ? entry : null
-    if (pendingEntry) pendingWatchdog.restart()
+    pendingBaseline = pendingEntry ? JSON.stringify(liveConfig) : ""
   }
 
-  onLiveConfigChanged: if (pendingEntry && Model.settingsLanded(liveConfig, pendingEntry)) {
-    pendingEntry = null
-    pendingWatchdog.stop()
-  }
-
-  // A write that never comes back (the shell refused it, the file is not
-  // writable) must not leave the screens showing something that was never
-  // saved. After a few seconds the plugin goes back to what the shell says.
-  Timer {
-    id: pendingWatchdog
-    interval: 5000
-    repeat: false
-    onTriggered: {
-      if (!root.pendingEntry) return
-      console.warn("kids-clock: a saved setting did not come back from the shell; showing what it says instead")
-      root.pendingEntry = null
-    }
+  // Let go when the shell agrees, and also when it says something else
+  // entirely, which means shell.json was edited from somewhere else while the
+  // write was in flight and that edit is the newer truth. There is no timer:
+  // a write the shell has accepted is real whether or not it has come back
+  // yet, and giving up on it would put the removed person back on the screen.
+  onLiveConfigChanged: {
+    if (!pendingEntry) return
+    if (Model.settingsLanded(liveConfig, pendingEntry)) { pendingEntry = null; pendingBaseline = ""; return }
+    if (JSON.stringify(liveConfig) !== pendingBaseline) { pendingEntry = null; pendingBaseline = "" }
   }
 
   readonly property var config: pendingEntry ? pendingEntry : liveConfig
