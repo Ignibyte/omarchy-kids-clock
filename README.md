@@ -5,7 +5,9 @@ question a child asks about the people they love in other places: is Grandma
 awake right now, and can I call her?
 
 Time is abstract for a young child, so this clock does not lead with digits.
-Each place gets a sky with the sun on its arc by day and the moon by night. A
+Each place gets a sky with the sun on its arc by day and the moon by night,
+and the sky itself changes: darker overhead, lighter towards the horizon, and
+warmed as the sun gets near it, so dawn and dusk look like dawn and dusk. A
 sentence says what time of day it is there in words. Each person gets a card:
 their own sky, whether they are awake, what they are probably doing, and
 whether it is a good time to call. Two buttons move the sun forward and
@@ -32,8 +34,9 @@ switched at the top of the screen.
 ![The globe, turned to Sydney](preview-globe.png)
 
 The plugin binds to Omarchy's theme tokens and ships no colours of its own.
-The sun is the theme accent and the moon is the theme foreground, so it
-re-tints when the theme changes, like the rest of the shell.
+The sun is the theme accent and the moon is the theme foreground, and even the
+sky's gradient is those two at an alpha, so the whole thing re-tints when the
+theme changes, like the rest of the shell.
 
 ## The three faces
 
@@ -180,7 +183,7 @@ omarchy-shell shell setBarWidget ignibyte.kids-clock people '"Grandma=Phoenix; N
 | `band` | `explorer` | `explorer`, `tinkerer` or `navigator` |
 | `people` | `Grandma=Phoenix; Cousin Mia=Berlin; Uncle Ken=Tokyo` | `Name=City` pairs separated by semicolons, which the People screen edits. Cities from the built-in list of about 1,460, `City, Region` when the name is shared, or any IANA zone such as `America/Phoenix`; a zone tzdata does not know is reported as unknown rather than shown as UTC. Names up to 40 characters, places up to 64, at most 32 pairs kept. An empty value shows nobody; a missing key shows these three examples |
 | `homeCity` | blank | What home is called, as free text, edited on the Me screen. Blank uses the city that matches the system time zone. A city from the built-in list also places home on the map and the globe and gives its sky the right sunrise; anything else is only the name. Home's clock follows the system time zone either way |
-| `wakeTime`, `schoolStart`, `schoolEnd`, `dinnerTime`, `bedTime` | `07:00`, `08:30`, `15:00`, `18:00`, `20:00` | The family routine. "Uncle Ken is probably at school" means the child's own routine moved to Tokyo, which is honest and personal rather than a guess about another country |
+| `wakeTime`, `schoolStart`, `schoolEnd`, `dinnerTime`, `bedTime` | `07:00`, `08:30`, `15:00`, `18:00`, `20:00` | The family routine. "Uncle Ken is probably at school or at work" means the child's own routine moved to Tokyo, which is honest and personal rather than a guess about another country. The words fit a grandparent as well as a child, because most of the people on the clock are grown up |
 | `hourFormat` | `12` | `12` or `24`, for the bands that show digits |
 | `bestStreak` | none | The longest run of right answers in the game. The game writes it; there is no reason to set it by hand, and deleting it starts the best again |
 
@@ -217,7 +220,7 @@ the field they finish.
 |---|---|
 | ←, →, Now | move the sun an hour, and put it back. On the clock they sit under the face, which is the thing they move; at the top of Times on Earth otherwise. All three are always there, so the row never shifts under a hand |
 | Globe, Flat map | the two ways of looking at Times on Earth (the flat map is navigator) |
-| Find home | turns the globe back to home; it sits between the two buttons that turn it |
+| the house | turns the globe back to home; it sits between the two buttons that turn it |
 | Set the clock, Read the clock | the two rounds of the game |
 | Check | answers the round: right adds one to the run, wrong ends it |
 | Start again, Another one | put the hands back where they began, and take a new round |
@@ -254,7 +257,8 @@ toy clock reset (at nine when the answer is twelve itself), so the hour goes
 first and then the minutes. The hour hand is geared to the minute hand, so
 half past shows it halfway to the next numeral, which is the thing children
 find hardest about a real clock. Four round buttons turn the hands an hour or
-a step either way.
+a step either way. The prompt is not said twice: what the round wants is on
+the screen once.
 
 **Read the clock** does it the other way round: the hands are already set, and
 four times are offered. The three wrong ones are the mistakes a child actually

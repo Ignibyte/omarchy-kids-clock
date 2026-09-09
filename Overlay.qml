@@ -592,6 +592,23 @@ Item {
     readonly property real horizonY: height * 0.86
     readonly property real radiusX: width / 2 - bodySize
     readonly property real radiusY: horizonY - bodySize * 0.9
+    // The sky has a ground to it rather than one flat fill: darker overhead,
+    // lighter at the horizon, and warmed towards the accent as the sun gets
+    // near it, so dawn and dusk look like dawn and dusk. `glow` is 1 with the
+    // sun on the horizon and nothing by a fifth of the way up. Every colour
+    // is a theme token at an alpha, so the whole thing re-tints with the rest
+    // of the shell and ships no palette of its own.
+    readonly property real clampedT: Math.max(0, Math.min(1, t))
+    readonly property real glow: isDay
+      ? Math.max(0, 1 - Math.min(clampedT, 1 - clampedT) * 5) : 0
+    readonly property color skyTop: isDay
+      ? Util.alpha(root.foreground, root.darkTheme ? 0.05 : 0.03)
+      : Util.alpha(root.foreground, root.darkTheme ? 0.03 : 0.13)
+    readonly property color skyLow: isDay
+      ? Util.alpha(root.foreground, root.darkTheme ? 0.17 : 0.09)
+      : Util.alpha(root.foreground, root.darkTheme ? 0.10 : 0.21)
+    readonly property color skyHorizon: Qt.tint(skyLow, Util.alpha(root.sunColor, 0.30 * glow))
+
     readonly property real angle: Math.PI * (1 - Math.max(0, Math.min(1, t)))
     readonly property real bodyX: width / 2 + radiusX * Math.cos(angle)
     readonly property real bodyY: horizonY - radiusY * Math.sin(angle)
@@ -599,8 +616,24 @@ Item {
     Rectangle {
       anchors.fill: parent
       radius: root.cornerRadius
-      color: sky.isDay ? root.daySky : root.nightSky
-      Behavior on color { ColorAnimation { duration: 160 } }
+      gradient: Gradient {
+        GradientStop {
+          position: 0
+          color: sky.skyTop
+          Behavior on color { ColorAnimation { duration: 300 } }
+        }
+        GradientStop {
+          // Where the horizon line is drawn, so the warm band sits on it.
+          position: 0.86
+          color: sky.skyHorizon
+          Behavior on color { ColorAnimation { duration: 300 } }
+        }
+        GradientStop {
+          position: 1
+          color: sky.skyLow
+          Behavior on color { ColorAnimation { duration: 300 } }
+        }
+      }
     }
 
     Shape {
@@ -2337,7 +2370,8 @@ Item {
               id: findHome
               anchors.verticalCenter: parent.verticalCenter
               compact: true
-              text: "Find home"
+              text: Model.HOME_GLYPH
+              fontSize: Style.font.icon
               onClicked: root.centreGlobeOnHome()
             }
             TurnButton { glyph: "›"; caption: "turn it"; delta: 40; spins: true }
@@ -2513,14 +2547,23 @@ Item {
 
             Text {
               width: parent.width
+              height: Math.ceil(verdictMetrics.height * 2)
               textFormat: Text.PlainText
-              text: !root.currentRound ? ""
-                : (root.checked ? root.verdict : root.currentRound.task)
-              color: !root.checked ? root.quiet : (root.wasRight ? root.sunColor : root.foreground)
+              text: root.checked ? root.verdict : ""
+              color: root.wasRight ? root.sunColor : root.foreground
               font.family: root.fontFamily
               font.pixelSize: Style.font.heading
               wrapMode: Text.WordWrap
+              maximumLineCount: 2
+              elide: Text.ElideRight
+              verticalAlignment: Text.AlignTop
               Behavior on color { ColorAnimation { duration: 300 } }
+
+              FontMetrics {
+                id: verdictMetrics
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.heading
+              }
             }
 
             Item { width: 1; height: Style.spacing.md }

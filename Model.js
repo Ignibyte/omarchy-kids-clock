@@ -502,10 +502,10 @@ function activityAt(minutesOfDay, routine, weekend) {
   var asleep = lateBed ? (m >= routine.bed && m < routine.wake) : (m < routine.wake || m >= routine.bed)
   if (asleep) return { key: "asleep", label: "fast asleep", awake: false, call: "asleep" }
   if (m >= routine.wake && m < routine.wake + 45) return { key: "waking", label: "waking up and having breakfast", awake: true, call: "good" }
-  if (!weekend && m >= routine.schoolStart && m < routine.schoolEnd) return { key: "school", label: "at school", awake: true, call: "busy" }
+  if (!weekend && m >= routine.schoolStart && m < routine.schoolEnd) return { key: "school", label: "at school or at work", awake: true, call: "busy" }
   if (m >= routine.dinner && m < routine.dinner + 45) return { key: "dinner", label: "having dinner", awake: true, call: "busy" }
   if (mod(routine.bed - m, 1440) <= 45) return { key: "bedtime", label: "getting ready for bed", awake: true, call: "good" }
-  return { key: "playing", label: weekend ? "playing, it's the weekend" : "out of school and playing", awake: true, call: "good" }
+  return { key: "playing", label: weekend ? "off, it's the weekend" : "home from school or work", awake: true, call: "good" }
 }
 
 function callWords(call) {
@@ -604,6 +604,8 @@ function tooltip(rows) {
 // the bar font is known to carry.
 var SUN_GLYPH = ""
 var MOON_GLYPH = ""
+// A house from the same icon font, for the button that finds home.
+var HOME_GLYPH = ""
 
 function barGlyph(isDay) {
   return isDay ? SUN_GLYPH : MOON_GLYPH
@@ -1124,6 +1126,7 @@ if (typeof module !== "undefined") {
     globeSpotList: globeSpotList,
     globeMarkers: globeMarkers,
     spotView: spotView,
-    MOON_GLYPH: MOON_GLYPH
+    MOON_GLYPH: MOON_GLYPH,
+    HOME_GLYPH: HOME_GLYPH
   }
 }

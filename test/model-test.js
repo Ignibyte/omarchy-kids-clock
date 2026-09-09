@@ -38,6 +38,20 @@ check("the plugin finds its own directory when the manifest no longer carries it
   assert.strictEqual(Model.dirFromUrl(""), "")
 })
 
+check("the routine says something true of a grandparent as well as a child", () => {
+  const rules = Model.bandRules("navigator")
+  const routine = Model.routineFrom({})
+  const home = Model.buildHome("Chicago", 41.88, -87.63, -5 * 3600, Date.UTC(2026, 8, 9, 15, 0), rules, "12")
+  const gran = Model.parsePeople("Gramsy=Phoenix", cities, 3)[0]
+  // A Wednesday mid-morning: nobody is "at school" on their own.
+  const midweek = Date.UTC(2026, 8, 9, 17, 0)
+  const school = Model.buildRow(gran, { offsetSeconds: -7 * 3600 }, midweek, home, routine, rules, "12")
+  assert.ok(school.sentence.indexOf("at school or at work") !== -1, school.sentence)
+  // And the afternoon is not "out of school" either.
+  const after = Model.buildRow(gran, { offsetSeconds: -7 * 3600 }, Date.UTC(2026, 8, 9, 23, 0), home, routine, rules, "12")
+  assert.ok(after.sentence.indexOf("home from school or work") !== -1, after.sentence)
+})
+
 check("clock strings parse, with am/pm and fallbacks", () => {
   assert.strictEqual(Model.parseClock("07:30", 0), 450)
   assert.strictEqual(Model.parseClock("8pm", 0), 20 * 60)
@@ -148,7 +162,7 @@ check("rows and the home carry the words a child reads", () => {
   assert.strictEqual(row.timeText, "8:30 AM")
   assert.strictEqual(row.awake, true)
   assert.ok(row.sentence.indexOf("In Tokyo it's morning, and it's already tomorrow.") === 0, row.sentence)
-  assert.ok(row.sentence.indexOf("Uncle Ken is probably playing, it's the weekend.") > 0, row.sentence)
+  assert.ok(row.sentence.indexOf("Uncle Ken is probably off, it's the weekend.") > 0, row.sentence)
   const pending = Model.buildRow(ken, undefined, utc, home, Model.routineFrom({}), rules, "12")
   assert.strictEqual(pending.ready, false)
   assert.strictEqual(Model.scrubWords(0), "")
