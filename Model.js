@@ -80,6 +80,20 @@ function settingsFor(config, pluginId) {
   return {}
 }
 
+// Does the shell's own copy of the entry already say everything we asked it
+// to save? Only the keys we set are compared: the shell rebuilds the entry
+// around them, and a key we never mentioned is not ours to wait for.
+function settingsLanded(live, saved) {
+  if (!saved || typeof saved !== "object") return true
+  if (!live || typeof live !== "object") return false
+  for (var key in saved) {
+    if (key === "id") continue
+    if (String(live[key] === undefined ? "" : live[key]) !== String(saved[key] === undefined ? "" : saved[key]))
+      return false
+  }
+  return true
+}
+
 function setting(settings, key, fallback) {
   var value = settings ? settings[key] : undefined
   return value === undefined || value === null || value === "" ? fallback : value
@@ -1043,6 +1057,7 @@ if (typeof module !== "undefined") {
   module.exports = {
     bandRules: bandRules,
     settingsFor: settingsFor,
+    settingsLanded: settingsLanded,
     dirFromUrl: dirFromUrl,
     setting: setting,
     parseClock: parseClock,

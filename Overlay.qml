@@ -228,12 +228,10 @@ Item {
     closeMe()
   }
 
-  function useSystemZone() {
-    persistSettings({ homeCity: "" })
-    closeMe()
-  }
-
   function acceptMe() {
+    // An empty field means home goes back to the computer's own time zone,
+    // which is where it started; there is no separate button for it.
+    if (meDraft.trim() === "") { saveMe(""); return }
     var option = meOptions[meIndex]
     if (option) saveMe(option.key)
   }
@@ -294,7 +292,13 @@ Item {
     var current = clock.config || {}
     for (var k in current) if (k !== "id") entry[k] = current[k]
     for (var v in values) entry[v] = values[v]
-    if (shell && typeof shell.updateEntryInline === "function") return shell.updateEntryInline(pluginId, entry)
+    if (shell && typeof shell.updateEntryInline === "function") {
+      var saved = shell.updateEntryInline(pluginId, entry)
+      // Show it at once rather than waiting for the shell's copy to catch up;
+      // the service drops the entry again as soon as the shell agrees.
+      if (saved && typeof clock.noteSaved === "function") clock.noteSaved(entry)
+      return saved
+    }
     console.warn("kids-clock: the shell cannot save settings here")
     return false
   }
@@ -1347,11 +1351,10 @@ Item {
           Item {
             id: homeArea
             width: parent.width
-            height: clockView.aloneAtHome
-              ? Math.max(homeHeader.height + content.gap + content.homeSkyHeight,
-                         clockView.height - invite.height - sunRow.height
-                           - Style.spacing.md - content.gap)
-              : homeHeader.height + content.gap + content.homeSkyHeight
+            readonly property int skyRoom: clockView.height - homeHeader.height
+              - content.gap - sunRow.height - Style.spacing.md
+            height: homeHeader.height + content.gap
+              + (clockView.aloneAtHome ? homeSky.height : content.homeSkyHeight)
 
             Face {
               id: homeFace
@@ -1366,7 +1369,7 @@ Item {
               // which feeds the header's width which feeds its wrap.
               width: !visible ? 0
                 : (clockView.aloneAtHome
-                  ? Math.min(height, Math.round(homeArea.width * 0.42))
+                  ? Math.min(homeSky.height, Math.round(homeArea.width * 0.42))
                   : content.homeSkyHeight + content.gap + Math.round(Style.font.displayLarge * 1.3))
               minutesOfDay: root.home ? root.home.minutesOfDay : 0
 
@@ -1388,18 +1391,15 @@ Item {
             Sky {
               id: homeSky
               // The sun's path is a dome, so the sky keeps its shape rather
-              // than stretching into whatever height is going spare; alone it
-              // sits centred in the room under the sentence, beside the face.
-              readonly property int room: homeArea.height - homeHeader.height - content.gap
+              // than stretching into whatever height is going spare.
               anchors.left: parent.left
               anchors.right: homeFace.visible ? homeFace.left : parent.right
               anchors.rightMargin: homeFace.visible ? content.gap * 2 : 0
-              anchors.top: clockView.aloneAtHome ? undefined : homeHeader.bottom
-              anchors.topMargin: clockView.aloneAtHome ? 0 : content.gap
-              y: clockView.aloneAtHome
-                ? homeHeader.height + content.gap + Math.round((room - height) / 2) : 0
+              anchors.top: homeHeader.bottom
+              anchors.topMargin: content.gap
               height: clockView.aloneAtHome
-                ? Math.max(content.homeSkyHeight, Math.min(room, Math.round(width * 0.52)))
+                ? Math.max(content.homeSkyHeight,
+                    Math.min(homeArea.skyRoom, Math.round(width * 0.52)))
                 : content.homeSkyHeight
               isDay: root.home ? root.home.isDay : true
               t: root.home ? root.home.t : 0.5
@@ -1414,24 +1414,6 @@ Item {
             anchors.top: homeArea.bottom
             anchors.topMargin: Style.spacing.md
             anchors.left: parent.left
-          }
-
-          // What to do about the empty half of the clock, on the clock rather
-          // than in a menu.
-          Text {
-            id: invite
-            visible: clockView.aloneAtHome
-            height: visible ? implicitHeight : 0
-            anchors.bottom: parent.bottom
-            width: parent.width
-            textFormat: Text.PlainText
-            text: root.hasFace
-              ? "Only your clock so far. Play sets the hands, and People adds someone whose day appears beside yours."
-              : "Only your sky so far. People adds someone whose day appears beside yours."
-            color: root.quiet
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.title
-            wrapMode: Text.WordWrap
           }
 
           // One card per person, side by side.
@@ -1617,12 +1599,6 @@ Item {
             SunRow {}
             ActionButton {
               compact: true
-              visible: root.showGlobe
-              text: "Find home"
-              onClicked: root.centreGlobeOnHome()
-            }
-            ActionButton {
-              compact: true
               visible: root.hasMap
               primary: root.earthMode === "map"
               text: "Flat map"
@@ -1648,37 +1624,16 @@ Item {
           anchors.bottom: parent.bottom
           anchors.bottomMargin: toolbar.height + content.gap
 
-          HomeHeader {
-            id: mapHeader
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.top: parent.top
-          }
-
           WorldMap {
             id: worldMap
-            anchors.top: mapHeader.bottom
-            anchors.topMargin: content.gap
+            anchors.top: parent.top
             anchors.horizontalCenter: parent.horizontalCenter
-            width: Math.min(parent.width, Math.floor((parent.height - mapHeader.height - mapCaption.height - content.gap * 2) * 2))
+            width: Math.min(parent.width, Math.floor(parent.height * 2))
             height: Math.round(width / 2)
             land: root.land
             night: root.night
             sun: root.sun
             markers: root.markers
-          }
-
-          Text {
-            id: mapCaption
-            anchors.top: worldMap.bottom
-            anchors.topMargin: content.gap
-            width: parent.width
-            textFormat: Text.PlainText
-            text: "The shaded part of the world is having its night. The sun is straight overhead at the little sun, and under the moon it is the middle of the night. Earlier and later move them."
-            color: root.quiet
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.body
-            wrapMode: Text.WordWrap
           }
         }
 
@@ -1736,7 +1691,7 @@ Item {
               spacing: Style.spacing.lg
 
               Rectangle {
-              width: Math.min(parent.width - meGo.width - meZone.width - Style.spacing.lg * 2, Style.space(560))
+              width: Math.min(parent.width - meGo.width - Style.spacing.lg, Style.space(560))
               height: Style.space(56)
               radius: root.cornerRadius
               color: Util.alpha(root.foreground, 0.06)
@@ -1788,23 +1743,16 @@ Item {
                 id: meGo
                 anchors.verticalCenter: parent.verticalCenter
                 primary: true
-                enabled: root.meOptions.length > 0
+                enabled: root.meOptions.length > 0 || root.meDraft.trim() === ""
                 text: "Save"
                 onClicked: root.acceptMe()
-              }
-              ActionButton {
-                id: meZone
-                anchors.verticalCenter: parent.verticalCenter
-                visible: !root.meFromZone
-                text: "Use the computer's zone"
-                onClicked: root.useSystemZone()
               }
             }
 
             Text {
               width: parent.width
               textFormat: Text.PlainText
-              text: "Type anything: a town, a street, whatever we call the house. The clock here always follows the computer's own time zone; picking a place from the list also puts home on the map and the globe, and gives its sky the right sunrise."
+              text: "Type anything: a town, a street, whatever we call the house. The clock here always follows the computer's own time zone, whatever this says; picking a place from the list also puts home on the map and the globe, and gives its sky the right sunrise. Leave it empty to go back to the computer's own place."
               color: root.quiet
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
@@ -2217,7 +2165,12 @@ Item {
           anchors.topMargin: content.gap
           anchors.bottom: parent.bottom
           anchors.bottomMargin: toolbar.height + content.gap
-          readonly property int globeSize: Math.max(Style.space(200), Math.min(height - spinRow.height - content.gap, Math.round(width * 0.54)))
+          // The globe leaves room for what sits under it: the two turn
+          // buttons and Find home, which belongs to the globe rather than to
+          // the header the flat map shares.
+          readonly property int globeSize: Math.max(Style.space(200),
+            Math.min(height - spinRow.height - findHome.height - Style.spacing.sm - content.gap,
+              Math.round(width * 0.54)))
 
           Globe {
             id: theGlobe
@@ -2249,6 +2202,16 @@ Item {
             spacing: Style.spacing.xxl * 2
             TurnButton { glyph: "‹"; caption: "turn it"; delta: -40; spins: true }
             TurnButton { glyph: "›"; caption: "turn it"; delta: 40; spins: true }
+          }
+
+          ActionButton {
+            id: findHome
+            anchors.horizontalCenter: spinRow.horizontalCenter
+            anchors.top: spinRow.bottom
+            anchors.topMargin: Style.spacing.sm
+            compact: true
+            text: "Find home"
+            onClicked: root.centreGlobeOnHome()
           }
 
           Column {

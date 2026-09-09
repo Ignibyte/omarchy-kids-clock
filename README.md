@@ -71,7 +71,9 @@ the sun here too, and the night sweeps round the globe as it goes.
 ### The flat map
 
 On the Navigator band, Flat map lays the world out flat with the
-night side shaded. The shade is the real one for the shown instant, worked
+night side shaded. The top of the screen does not change when the view does:
+the same title, the same switch, the same Earlier and Later. Only the world
+below it is drawn differently. The shade is the real one for the shown instant, worked
 out from the sun's declination and Greenwich solar noon, so it leans towards
 one pole in December and the other in June, and it sweeps west as Earlier
 and Later move the sun. A sun marks where the sun is straight overhead, a moon
@@ -145,14 +147,18 @@ street, "the house on the hill". Whatever is typed is what home is called.
 
 Picking a real place from the list does one thing more — it puts home on the
 map and the globe, and gives the sky the right sunrise for that latitude
-instead of the one that belongs to the system zone. A button hands home back
-to the computer's time zone.
+instead of the one that belongs to the system zone. Saving an empty field
+hands home back to the computer's own place.
 
 ![The People screen asking where Nana lives](preview-people.png)
 
 Everything is saved to the plugin's own entry in `~/.config/omarchy/shell.json`
 through the shell, the same way the built-in panels save their settings, so
-the command line sees the same values.
+the command line sees the same values. A saved entry has to go out to the
+shell and come back before the shell's own copy of the config says it, so the
+clock believes what it just wrote until the shell agrees. Without that, a
+second edit is built on a config that has not heard about the first, and adding
+two people in a row loses one of them.
 
 ## Settings
 
@@ -207,7 +213,7 @@ the field they finish.
 | Earlier, Later | move the sun an hour, under the sky on the clock and at the top of Times on Earth |
 | Back to now | appears once the sun has moved, and puts it back |
 | Globe, Flat map | the two ways of looking at Times on Earth (the flat map is navigator) |
-| Find home | turns the globe back to home |
+| Find home | turns the globe back to home; it sits under the globe, with the buttons that turn it |
 | Set the clock, Read the clock | the two rounds of the game |
 | Start again, Another one | put the hands back where they began, and take a new round |
 | Next, Save | finish the question the field is asking |

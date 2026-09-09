@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "ignibyte.kids-clock",
   "name": "Sun Clock",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "author": "Ignibyte",
   "license": "MIT",
   "description": "A clock for kids: where the sun is over the people you love, and whether they are awake.",

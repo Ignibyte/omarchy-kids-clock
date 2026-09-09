@@ -27,8 +27,42 @@ Item {
   // 4.0.3 injects a capability-scoped API whose `barConfig` is the bar half of
   // that same config, kept current as shell.json changes. Either shape finds
   // the entry.
-  readonly property var config: !shell ? ({})
+  readonly property var liveConfig: !shell ? ({})
     : Model.settingsFor(shell.shellConfig ? shell.shellConfig : shell.barConfig, pluginId)
+
+  // What was last handed to the shell to save. A saved entry has to go out to
+  // the shell, into shell.json and back before the shell's copy says it, and
+  // until it does, every screen would still be showing the person who has
+  // just been removed — and worse, the next save would be built on top of
+  // that stale entry and put them back. So the plugin believes its own write
+  // until the shell agrees with it.
+  property var pendingEntry: null
+
+  function noteSaved(entry) {
+    pendingEntry = entry && typeof entry === "object" ? entry : null
+    if (pendingEntry) pendingWatchdog.restart()
+  }
+
+  onLiveConfigChanged: if (pendingEntry && Model.settingsLanded(liveConfig, pendingEntry)) {
+    pendingEntry = null
+    pendingWatchdog.stop()
+  }
+
+  // A write that never comes back (the shell refused it, the file is not
+  // writable) must not leave the screens showing something that was never
+  // saved. After a few seconds the plugin goes back to what the shell says.
+  Timer {
+    id: pendingWatchdog
+    interval: 5000
+    repeat: false
+    onTriggered: {
+      if (!root.pendingEntry) return
+      console.warn("kids-clock: a saved setting did not come back from the shell; showing what it says instead")
+      root.pendingEntry = null
+    }
+  }
+
+  readonly property var config: pendingEntry ? pendingEntry : liveConfig
   readonly property string band: String(Model.setting(config, "band", "explorer"))
   readonly property var rules: Model.bandRules(band)
   readonly property string hourFormat: String(Model.setting(config, "hourFormat", "12"))

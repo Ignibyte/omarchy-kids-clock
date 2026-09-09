@@ -278,6 +278,25 @@ check("the game view follows the hands and hints the shortest way round", () => 
   assert.ok(Model.gameView(round, target + 720).minutesOfDay < 720, "the face only ever shows a dial time")
 })
 
+check("a saved entry is believed until the shell's own copy says the same", () => {
+  // The shell takes a saved entry out to shell.json and back. Until it comes
+  // back, the plugin shows what it wrote, or the next save is built on top of
+  // a config that has not heard about the last one and undoes it.
+  const saved = { id: "x", band: "navigator", people: "A=Phoenix; B=Tokyo" }
+  const stale = { id: "x", band: "navigator", people: "A=Phoenix" }
+  assert.strictEqual(Model.settingsLanded(stale, saved), false, "not back yet")
+  assert.strictEqual(Model.settingsLanded(saved, saved), true, "back, so let go of it")
+
+  // Removing the last person writes an empty string; a shell that drops the
+  // key entirely still counts as having landed it.
+  assert.strictEqual(Model.settingsLanded({ id: "x", people: "" }, { id: "x", people: "" }), true)
+  assert.strictEqual(Model.settingsLanded({ id: "x" }, { id: "x", people: "" }), true)
+  // Keys the plugin never set are not ours to wait for.
+  assert.strictEqual(Model.settingsLanded({ id: "x", people: "A=Phoenix", band: "explorer" },
+    { id: "x", people: "A=Phoenix" }), true)
+  assert.strictEqual(Model.settingsLanded({ id: "x" }, null), true, "nothing pending")
+})
+
 check("a person is removed by who they are, not by the row they were on", () => {
   let people = "Grandma=Phoenix; Uncle Ken=Tokyo; Nana=Sydney"
   assert.strictEqual(Model.indexOfPerson(people, "Uncle Ken", "Tokyo"), 1)
