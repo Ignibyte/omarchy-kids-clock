@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "ignibyte.kids-clock",
   "name": "Sun Clock",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "author": "Ignibyte",
   "license": "MIT",
   "description": "A clock for kids: where the sun is over the people you love, and whether they are awake.",
@@ -46,7 +46,7 @@
           "navigator"
         ],
         "defaultValue": "explorer",
-        "description": "explorer (3-5): sun, moon and words only. tinkerer (5-7): adds the digits, an analog face and the clock game in quarter hours. navigator (8-10): adds the world map with the night side, hours ahead or behind; the game works in five minutes."
+        "description": "explorer (3-5): sun, moon and words only. tinkerer (5-7): adds the digits, an analog face and the clock game in quarter hours. navigator (8-10): adds the flat map with the night side, hours ahead or behind; the game works in five minutes."
       },
       {
         "key": "people",

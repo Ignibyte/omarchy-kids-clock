@@ -82,7 +82,12 @@ Item {
 
   // ---- the map: the night side and the overhead sun at the shown instant,
   // computed only while the map is up.
-  property bool showMap: false
+  // Times on Earth: one screen with two ways of looking, the globe on every
+  // band and the flat map on the band that reads maps.
+  property bool showEarth: false
+  property string earthMode: "globe"
+  readonly property bool showMap: showEarth && earthMode === "map"
+  readonly property bool showGlobe: showEarth && earthMode === "globe"
   readonly property double shownMs: clock ? clock.shownMs : Date.now()
   readonly property var land: clock ? clock.land : []
   readonly property var sun: showMap ? Model.subsolarPoint(shownMs) : null
@@ -97,7 +102,6 @@ Item {
   // Everything is saved to the plugin's own entry in shell.json through the
   // shell, the way the built-in panels save theirs.
   // ---- the globe: where it is turned to, and the tapped place.
-  property bool showGlobe: false
   property real globeLat: 25
   property real globeLon: -90
   Behavior on globeLon { enabled: !root.globeDragging; NumberAnimation { id: lonSpin; duration: 500; easing.type: Easing.OutCubic } }
@@ -140,22 +144,33 @@ Item {
     globeAtHome = !!homeCity
   }
 
-  function openGlobe() {
+  function openEarth(mode) {
     if (playing) return
-    showMap = false
     showPeople = false
     showMe = false
+    earthMode = String(mode) === "map" && hasMap ? "map" : "globe"
+    showEarth = true
+    if (earthMode === "globe") settleGlobe()
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function setEarthMode(mode) {
+    var next = String(mode) === "map" && hasMap ? "map" : "globe"
+    if (next === earthMode) return
+    earthMode = next
+    if (next === "globe") settleGlobe()
+  }
+
+  function settleGlobe() {
     globeDragging = true
     centreGlobeOnHome()
     globeDragging = false
     pickedSpot = spots.length > 0 ? 0 : -1
-    showGlobe = true
     if (clock && typeof clock.requestZones === "function") clock.requestZones(spotZones())
-    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
-  function closeGlobe() {
-    showGlobe = false
+  function closeEarth() {
+    showEarth = false
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -195,8 +210,7 @@ Item {
 
   function openMe() {
     if (playing) return
-    showMap = false
-    showGlobe = false
+    showEarth = false
     showPeople = false
     meDraft = clock ? clock.homeCitySetting : ""
     meIndex = 0
@@ -287,8 +301,7 @@ Item {
 
   function openPeople() {
     if (playing) return
-    showMap = false
-    showGlobe = false
+    showEarth = false
     showMe = false
     peopleMode = "list"
     pending = null
@@ -428,8 +441,7 @@ Item {
   function startGame(mode) {
     if (!hasFace || !clock) return
     clock.resetScrub()
-    showMap = false
-    showGlobe = false
+    showEarth = false
     showPeople = false
     showMe = false
     beginRound(mode || gameMode)
@@ -465,23 +477,36 @@ Item {
     var payload = null
     try { payload = JSON.parse(payloadJson || "{}") } catch (e) { payload = null }
     var view = payload && payload.view ? String(payload.view) : ""
-    if (view === "map") root.showMap = root.hasMap
-    else if (view === "clock") { root.showMap = false; root.showPeople = false }
+    if (view === "map" || view === "earth" || view === "globe") root.openEarth(view === "map" ? "map" : "globe")
+    else if (view === "clock") { root.showEarth = false; root.showPeople = false }
     else if (view === "game") root.startGame()
     else if (view === "people") root.openPeople()
-    else if (view === "globe") root.openGlobe()
     else if (view === "me") root.openMe()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
   // Every way out lands on the clock next time: the shell's own hide (the
   // bar chip, a keybinding built on toggle) as much as Escape or Close.
+  // What Back means on each screen: one step out, never a jump. Inside the
+  // add flow it walks back through the questions before leaving the list.
+  function stepBack() {
+    if (playing) { stopGame(); return }
+    if (showMe) { closeMe(); return }
+    if (showPeople) {
+      if (peopleMode === "remove") { cancelRemove(); return }
+      if (peopleMode === "name" || peopleMode === "place") { editBack(); return }
+      closePeople()
+      return
+    }
+    if (showEarth) { closeEarth(); return }
+    dismiss()
+  }
+
   function resetViews() {
     root.stopGame()
-    root.showMap = false
+    root.showEarth = false
     root.showPeople = false
     root.showMe = false
-    root.showGlobe = false
     root.peopleMode = "list"
     root.pending = null
     if (root.clock) root.clock.resetScrub()
@@ -1147,6 +1172,21 @@ Item {
   // A kit button with room for small hands: the shell's own Button on the
   // menu tokens, so hover, press and the emphasised state follow the theme.
   // `primary` paints the one thing to press next in the kit's selected state.
+  // The sun's controls, wherever the sun is shown. Small and beside the
+  // thing they move, not down in the navigation.
+  component SunRow: Row {
+    spacing: Style.spacing.md
+    ActionButton { compact: true; text: "←  Earlier"; onClicked: if (root.clock) root.clock.scrub(-60) }
+    ActionButton { compact: true; text: "Later  →"; onClicked: if (root.clock) root.clock.scrub(60) }
+    ActionButton {
+      compact: true
+      primary: true
+      visible: root.scrubbing
+      text: "Back to now"
+      onClicked: if (root.clock) root.clock.resetScrub()
+    }
+  }
+
   component ActionButton: Button {
     property bool primary: false
     property bool compact: false
@@ -1227,18 +1267,17 @@ Item {
             return
           }
           if (event.key === Qt.Key_Escape) {
-            if (root.playing) root.stopGame()
-            else if (root.showMe) root.closeMe()
-            else if (root.scrubbing && root.clock) root.clock.resetScrub()
-            else if (root.showGlobe) root.closeGlobe()
-            else if (root.showMap) root.showMap = false
-            else root.dismiss()
+            if (!root.playing && !root.showEarth && root.scrubbing && root.clock) root.clock.resetScrub()
+            else root.stepBack()
             event.accepted = true
           } else if (event.key === Qt.Key_M) {
-            if (root.hasMap && !root.playing) { root.showGlobe = false; root.showMap = !root.showMap }
+            if (root.hasMap && !root.playing) {
+              if (root.showEarth) root.setEarthMode(root.earthMode === "map" ? "globe" : "map")
+              else root.openEarth("map")
+            }
             event.accepted = true
           } else if (event.key === Qt.Key_G) {
-            if (!root.playing) { if (root.showGlobe) root.closeGlobe(); else root.openGlobe() }
+            if (!root.playing) { if (root.showEarth) root.closeEarth(); else root.openEarth("globe") }
             event.accepted = true
           } else if (event.key === Qt.Key_P) {
             if (!root.playing) root.openPeople()
@@ -1310,7 +1349,8 @@ Item {
             width: parent.width
             height: clockView.aloneAtHome
               ? Math.max(homeHeader.height + content.gap + content.homeSkyHeight,
-                         clockView.height - invite.height - content.gap)
+                         clockView.height - invite.height - sunRow.height
+                           - Style.spacing.md - content.gap)
               : homeHeader.height + content.gap + content.homeSkyHeight
 
             Face {
@@ -1367,9 +1407,17 @@ Item {
             }
           }
 
+          // Moving the sun belongs to the sky, so the two buttons sit under
+          // it rather than in the navigation at the foot of the card.
+          SunRow {
+            id: sunRow
+            anchors.top: homeArea.bottom
+            anchors.topMargin: Style.spacing.md
+            anchors.left: parent.left
+          }
+
           // What to do about the empty half of the clock, on the clock rather
-          // than in a menu: the sun still moves with Earlier and Later, and
-          // People is where the rest of the family comes from.
+          // than in a menu.
           Text {
             id: invite
             visible: clockView.aloneAtHome
@@ -1378,8 +1426,8 @@ Item {
             width: parent.width
             textFormat: Text.PlainText
             text: root.hasFace
-              ? "Only your clock so far. Earlier and Later move the sun, Play sets the hands, and People adds someone whose day appears beside yours."
-              : "Only your sky so far. Earlier and Later move the sun, and People adds someone whose day appears beside yours."
+              ? "Only your clock so far. Play sets the hands, and People adds someone whose day appears beside yours."
+              : "Only your sky so far. People adds someone whose day appears beside yours."
             color: root.quiet
             font.family: root.fontFamily
             font.pixelSize: Style.font.title
@@ -1390,7 +1438,7 @@ Item {
           Row {
             id: peopleRow
             visible: !clockView.aloneAtHome
-            anchors.top: homeArea.bottom
+            anchors.top: sunRow.bottom
             anchors.topMargin: content.gap
             anchors.bottom: parent.bottom
             width: parent.width
@@ -1534,10 +1582,70 @@ Item {
 
         // ---- the map: the header, the world, and a line that says what
         // the shading means.
+        // ---- Times on Earth: the globe and the flat map are one place with
+        // two ways of looking, and the switch between them, Find home and the
+        // sun's own buttons all live up here with what they act on.
+        Item {
+          id: earthBar
+          visible: !root.playing && root.showEarth
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.top: parent.top
+          height: visible ? Math.max(earthTitle.implicitHeight, earthControls.implicitHeight) : 0
+
+          Text {
+            id: earthTitle
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            textFormat: Text.PlainText
+            text: "Times on Earth"
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.display
+            font.bold: true
+          }
+
+          Flow {
+            id: earthControls
+            anchors.left: earthTitle.right
+            anchors.leftMargin: Style.spacing.xl
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Style.spacing.md
+            layoutDirection: Qt.RightToLeft
+
+            SunRow {}
+            ActionButton {
+              compact: true
+              visible: root.showGlobe
+              text: "Find home"
+              onClicked: root.centreGlobeOnHome()
+            }
+            ActionButton {
+              compact: true
+              visible: root.hasMap
+              primary: root.earthMode === "map"
+              text: "Flat map"
+              onClicked: root.setEarthMode("map")
+            }
+            ActionButton {
+              compact: true
+              visible: root.hasMap
+              primary: root.earthMode === "globe"
+              text: "Globe"
+              onClicked: root.setEarthMode("globe")
+            }
+          }
+        }
+
         Item {
           id: mapView
-          visible: !root.playing && root.showMap && !root.showPeople && !root.showMe && !root.showGlobe
-          anchors.fill: parent
+          visible: !root.playing && root.showMap && !root.showPeople && !root.showMe
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.top: earthBar.bottom
+          anchors.topMargin: content.gap
+          anchors.bottom: parent.bottom
           anchors.bottomMargin: toolbar.height + content.gap
 
           HomeHeader {
@@ -1623,8 +1731,12 @@ Item {
               wrapMode: Text.WordWrap
             }
 
-            Rectangle {
-              width: Math.min(parent.width, Style.space(560))
+            Row {
+              width: parent.width
+              spacing: Style.spacing.lg
+
+              Rectangle {
+              width: Math.min(parent.width - meGo.width - meZone.width - Style.spacing.lg * 2, Style.space(560))
               height: Style.space(56)
               radius: root.cornerRadius
               color: Util.alpha(root.foreground, 0.06)
@@ -1669,6 +1781,23 @@ Item {
                 color: Util.alpha(root.foreground, 0.66)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.displayLarge
+              }
+              }
+
+              ActionButton {
+                id: meGo
+                anchors.verticalCenter: parent.verticalCenter
+                primary: true
+                enabled: root.meOptions.length > 0
+                text: "Save"
+                onClicked: root.acceptMe()
+              }
+              ActionButton {
+                id: meZone
+                anchors.verticalCenter: parent.verticalCenter
+                visible: !root.meFromZone
+                text: "Use the computer's zone"
+                onClicked: root.useSystemZone()
               }
             }
 
@@ -1926,8 +2055,12 @@ Item {
               wrapMode: Text.WordWrap
             }
 
-            Rectangle {
-              width: Math.min(parent.width, Style.space(560))
+            Row {
+              width: parent.width
+              spacing: Style.spacing.lg
+
+              Rectangle {
+              width: Math.min(parent.width - editGo.width - Style.spacing.lg, Style.space(560))
               height: Style.space(56)
               radius: root.cornerRadius
               color: Util.alpha(root.foreground, 0.06)
@@ -1980,6 +2113,17 @@ Item {
                 color: Util.alpha(root.foreground, 0.66)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.displayLarge
+              }
+              }
+
+              ActionButton {
+                id: editGo
+                anchors.verticalCenter: parent.verticalCenter
+                primary: true
+                enabled: root.peopleMode === "name"
+                  ? root.draftName.trim() !== "" : root.placeOptions.length > 0
+                text: root.peopleMode === "name" ? "Next  →" : "Save"
+                onClicked: root.editAccept()
               }
             }
 
@@ -2067,7 +2211,11 @@ Item {
         Item {
           id: globeView
           visible: !root.playing && root.showGlobe && !root.showPeople && !root.showMe
-          anchors.fill: parent
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.top: earthBar.bottom
+          anchors.topMargin: content.gap
+          anchors.bottom: parent.bottom
           anchors.bottomMargin: toolbar.height + content.gap
           readonly property int globeSize: Math.max(Style.space(200), Math.min(height - spinRow.height - content.gap, Math.round(width * 0.54)))
 
@@ -2211,6 +2359,35 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             spacing: Style.spacing.md
 
+            Flow {
+              width: parent.width
+              spacing: Style.spacing.md
+              ActionButton {
+                compact: true
+                primary: root.gameMode === "set"
+                text: "Set the clock"
+                onClicked: if (root.gameMode !== "set") root.switchGameMode()
+              }
+              ActionButton {
+                compact: true
+                primary: root.gameMode === "read"
+                text: "Read the clock"
+                onClicked: if (root.gameMode !== "read") root.switchGameMode()
+              }
+              ActionButton {
+                compact: true
+                visible: root.gameMode === "set" && !root.solved
+                text: "Start again"
+                onClicked: if (root.currentRound) root.hands = root.currentRound.startHands
+              }
+              ActionButton {
+                compact: true
+                visible: root.solved
+                text: "Another one  →"
+                onClicked: root.nextRound()
+              }
+            }
+
             Text {
               width: parent.width
               textFormat: Text.PlainText
@@ -2345,9 +2522,10 @@ Item {
         }
 
 
-        // ---- the buttons: what can be done from here on the left, Close on
-        // the right. Only the buttons that mean something now are shown, and
-        // the row wraps rather than run under Close if a theme's font is wide.
+        // ---- the bottom row is navigation and nothing else: where you can
+        // go from here, and the way back. What the screen you are on can do
+        // lives on that screen, next to the thing it acts on, so a button
+        // never means "go somewhere" and "change something" in the same row.
         Item {
           id: toolbar
           anchors.left: parent.left
@@ -2355,12 +2533,7 @@ Item {
           anchors.bottom: parent.bottom
           height: Math.max(actions.implicitHeight, closeButton.implicitHeight)
 
-          readonly property bool onClock: !root.playing && !root.showPeople && !root.showMe && !root.showGlobe && !root.showMap
-          readonly property bool onMap: !root.playing && !root.showPeople && !root.showMe && !root.showGlobe && root.showMap
-          readonly property bool onGlobe: !root.playing && !root.showPeople && !root.showMe && root.showGlobe
-          readonly property bool onWorld: onClock || onMap || onGlobe
-          readonly property bool onList: root.showPeople && (root.peopleMode === "list" || root.peopleMode === "remove")
-          readonly property bool editing: root.showPeople && (root.peopleMode === "name" || root.peopleMode === "place")
+          readonly property bool onClock: !root.playing && !root.showPeople && !root.showMe && !root.showEarth
 
           Flow {
             id: actions
@@ -2369,68 +2542,20 @@ Item {
             width: parent.width - closeButton.width - Style.spacing.lg
             spacing: Style.spacing.lg
 
-            // The clock, the map and the globe share the sun.
-            ActionButton { visible: toolbar.onWorld; text: "←  Earlier"; onClicked: if (root.clock) root.clock.scrub(-60) }
-            ActionButton { visible: toolbar.onWorld; text: "Later  →"; onClicked: if (root.clock) root.clock.scrub(60) }
-            ActionButton { visible: toolbar.onWorld && root.scrubbing; primary: true; text: "Back to now"; onClicked: if (root.clock) root.clock.resetScrub() }
+            // Back is always first, and always means one step out.
+            ActionButton {
+              visible: !toolbar.onClock
+              text: "←  Back"
+              onClicked: root.stepBack()
+            }
+
+            // From the clock: everywhere there is to go.
             ActionButton { visible: toolbar.onClock && root.hasFace; text: "Play"; onClicked: root.startGame() }
-            ActionButton { visible: toolbar.onClock && root.hasMap; text: "Map"; onClicked: { root.showGlobe = false; root.showMap = true } }
-            ActionButton { visible: toolbar.onClock || toolbar.onMap; text: "Globe"; onClicked: root.openGlobe() }
-            ActionButton { visible: toolbar.onClock || toolbar.onMap; text: "People"; onClicked: root.openPeople() }
+            ActionButton { visible: toolbar.onClock; text: "Earth"; onClicked: root.openEarth("globe") }
+            ActionButton { visible: toolbar.onClock; text: "People"; onClicked: root.openPeople() }
             ActionButton { visible: toolbar.onClock; text: "Me"; onClicked: root.openMe() }
-            ActionButton { visible: toolbar.onGlobe; text: "Find home"; onClicked: root.centreGlobeOnHome() }
-            ActionButton { visible: toolbar.onMap; text: "Clock"; onClicked: root.showMap = false }
-            ActionButton { visible: toolbar.onGlobe; text: "Clock"; onClicked: root.closeGlobe() }
-
-            // The Me screen.
-            ActionButton { visible: root.showMe && !root.playing; text: "←  Clock"; onClicked: root.closeMe() }
-            ActionButton {
-              visible: root.showMe && !root.playing && !root.meFromZone
-              text: "Use the computer's zone"
-              onClicked: root.useSystemZone()
-            }
-            ActionButton {
-              visible: root.showMe && !root.playing
-              primary: true
-              enabled: root.meOptions.length > 0
-              text: "Save"
-              onClicked: root.acceptMe()
-            }
-
-            // The People screen.
-            ActionButton { visible: toolbar.onList; text: "←  Clock"; onClicked: root.closePeople() }
-            ActionButton { visible: toolbar.editing; text: "←  Back"; onClicked: root.editBack() }
-            ActionButton {
-              visible: root.showPeople && root.peopleMode === "name"
-              primary: true
-              enabled: root.draftName.trim() !== ""
-              text: "Next  →"
-              onClicked: root.editAccept()
-            }
-            ActionButton {
-              visible: root.showPeople && root.peopleMode === "place"
-              primary: true
-              enabled: root.placeOptions.length > 0
-              text: "Save"
-              onClicked: root.editAccept()
-            }
-
-            // The game: leave, start the hands over, swap the two rounds, and
-            // once it is won, another one.
-            ActionButton { visible: root.playing; text: "←  Clock"; onClicked: root.stopGame() }
-            ActionButton {
-              visible: root.playing && root.gameMode === "set" && !root.solved
-              text: "Start again"
-              onClicked: if (root.currentRound) root.hands = root.currentRound.startHands
-            }
-            ActionButton { visible: root.playing; text: root.otherModeName; onClicked: root.switchGameMode() }
-            ActionButton {
-              visible: root.playing && root.solved
-              primary: true
-              text: "Another one  →"
-              onClicked: root.nextRound()
-            }
           }
+
 
           ActionButton {
             id: closeButton

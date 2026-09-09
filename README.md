@@ -23,10 +23,11 @@ or read the time the hands already show.
 
 ![The set-the-clock game on the Tinkerer face](preview-game.png)
 
-Every band gets the globe: the earth as dots, the night side shaded, and a
-marker for home, for each person and for fifty well-known places. Turn it
-with two buttons or a drag, tap a place, and the clock says what time it is
-there.
+Every band gets Times on Earth: the world as a globe of dots, the night side
+shaded, and a marker for home, for each person and for fifty well-known
+places. Turn it with two buttons or a drag, tap a place, and the clock says
+what time it is there. The Navigator band adds a flat map of the same world,
+switched at the top of the screen.
 
 ![The globe, turned to Sydney](preview-globe.png)
 
@@ -42,13 +43,20 @@ The age band is a parent setting. Each band adds to the one before.
 |---|---|---|
 | explorer | 3 to 5 | home and up to three people; sun, moon and words only; no digits |
 | tinkerer | 5 to 7 | adds the digital time, the analog face, "tomorrow" or "yesterday", up to four people, and the set-the-clock game in quarter hours |
-| navigator | 8 to 10 | adds the world map with the night side, "3 hours ahead", up to six people; the game works in five minutes |
+| navigator | 8 to 10 | adds the flat map with the night side, "3 hours ahead", up to six people; the game works in five minutes |
 
 ![The Tinkerer face: the digits, the analog face and the day labels](preview-tinkerer.png)
 
-## The globe
+## Times on Earth
 
-Globe, on every band, shows the earth as a globe of dots with the night side
+One screen, two ways of looking: a globe on every band, and on the Navigator
+band a flat map of the world as well. Both show the same thing — where the sun
+is right now, who is in the night, and what time it is there — and the switch
+between them is at the top of the screen, beside Earlier and Later.
+
+### The globe
+
+The globe shows the earth as a globe of dots with the night side
 shaded, the sun where it is straight overhead, a ring for home, an accent dot
 for each person, and a plain dot for each of fifty places most children have
 heard of, from Honolulu round to Auckland. It starts turned to home. The two
@@ -60,9 +68,9 @@ what a child there is probably doing, which is the family's own routine moved
 to that place, the same honest guess the cards make. Earlier and Later move
 the sun here too, and the night sweeps round the globe as it goes.
 
-## The map
+### The flat map
 
-On the Navigator band, The map swaps the clock for a map of the world with the
+On the Navigator band, Flat map lays the world out flat with the
 night side shaded. The shade is the real one for the shown instant, worked
 out from the sun's declination and Greenwich solar noon, so it leans towards
 one pole in December and the other in June, and it sweeps west as Earlier
@@ -174,27 +182,40 @@ opens the big clock. Right click puts the sun back to now after a scrub.
 
 ## The buttons
 
-A row of buttons along the bottom of the card does everything, sized for
-small hands and drawn with the shell's own button so they follow the theme.
-Only the ones that mean something right now are shown.
+The row along the bottom of the card is **navigation and nothing else**: where
+you can go from here, and the way back. `←  Back` is always the first thing in
+it and always means one step out; `Close` is always on the right. A button in
+that row never also changes what is on the screen.
 
-| Button | Does |
+What the screen you are on can *do* sits on that screen, next to the thing it
+acts on. Earlier and Later are under the sky whose sun they move. The game's
+round switch and Another one are at the top of the round. The globe and the
+flat map are switched from the top of Times on Earth. Next and Save sit beside
+the field they finish.
+
+| Bottom row | Does |
 |---|---|
-| Earlier, Later | move the sun an hour earlier or later, on the clock, the map and the globe |
-| Back to now | appears once the sun has moved, and puts it back |
+| ←  Back | one step out: out of the game, Times on Earth, People or Me, and back a question inside the add flow |
 | Play | opens the clock game (tinkerer and navigator); clicking the analog face does the same |
-| Map | the world map with the night side (navigator) |
-| Globe | the globe; under it two round buttons turn it, and Find home brings it back to home |
+| Earth | Times on Earth |
 | People | the People screen, where a parent adds and removes people |
 | Me | the Me screen, where home is named |
-| Set the clock, Read the clock | in the game, swaps to the other round |
-| Another one | in the game, once the round is won |
-| Clock | back to the clock from the map, the globe, People, Me or the game |
 | Close | closes the big clock; so does a click outside the card |
+
+| On the screen | Does |
+|---|---|
+| Earlier, Later | move the sun an hour, under the sky on the clock and at the top of Times on Earth |
+| Back to now | appears once the sun has moved, and puts it back |
+| Globe, Flat map | the two ways of looking at Times on Earth (the flat map is navigator) |
+| Find home | turns the globe back to home |
+| Set the clock, Read the clock | the two rounds of the game |
+| Start again, Another one | put the hands back where they began, and take a new round |
+| Next, Save | finish the question the field is asking |
+| Remove | on a person's row, asks once |
 
 The keys do the same for anyone at a keyboard: Left and Right move the sun
 (a quarter hour with Shift), 0 comes back to now, Enter opens the game, M is
-the map, G the globe, P people, and Escape steps back and finally closes. In
+the flat map, G Times on Earth, P people, and Escape steps back and finally closes. In
 the game, Left and Right turn the hands a step (one minute with Shift), Up and
 Down an hour, 0 puts them back, R swaps the two rounds, 1 to 4 pick an answer
 in Read the clock, and Enter moves on once the round is won.
@@ -202,10 +223,11 @@ in Read the clock, and Enter moves on once the round is won.
 A view can be opened directly, which suits a keybinding:
 
 ```bash
+omarchy-shell shell toggle ignibyte.kids-clock '{"view":"earth"}'
 omarchy-shell shell toggle ignibyte.kids-clock '{"view":"map"}'
+omarchy-shell shell toggle ignibyte.kids-clock '{"view":"globe"}'
 omarchy-shell shell toggle ignibyte.kids-clock '{"view":"game"}'
 omarchy-shell shell toggle ignibyte.kids-clock '{"view":"people"}'
-omarchy-shell shell toggle ignibyte.kids-clock '{"view":"globe"}'
 omarchy-shell shell toggle ignibyte.kids-clock '{"view":"me"}'
 ```
 
