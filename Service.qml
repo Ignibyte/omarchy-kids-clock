@@ -15,10 +15,20 @@ Item {
   property var manifest: null
 
   readonly property string pluginId: manifest && manifest.id ? String(manifest.id) : "ignibyte.kids-clock"
-  readonly property string sourceDir: manifest && manifest.__sourceDir ? String(manifest.__sourceDir) : ""
+  // Where this plugin's own files are. Omarchy up to 4.0.2 stamped the path
+  // onto the manifest; 4.0.3 strips it from the copy a third-party plugin is
+  // handed, so the fallback asks QML where this very file sits, which is the
+  // same directory and needs nothing from the shell.
+  readonly property string sourceDir: manifest && manifest.__sourceDir
+    ? String(manifest.__sourceDir) : Model.dirFromUrl(Qt.resolvedUrl("."))
 
-  // Settings live on the bar widget's inline shell.json entry.
-  readonly property var config: shell && shell.shellConfig ? Model.settingsFor(shell.shellConfig, pluginId) : ({})
+  // Settings live on the bar widget's inline shell.json entry. Omarchy up to
+  // 4.0.2 injected the shell itself, with the whole config on `shellConfig`;
+  // 4.0.3 injects a capability-scoped API whose `barConfig` is the bar half of
+  // that same config, kept current as shell.json changes. Either shape finds
+  // the entry.
+  readonly property var config: !shell ? ({})
+    : Model.settingsFor(shell.shellConfig ? shell.shellConfig : shell.barConfig, pluginId)
   readonly property string band: String(Model.setting(config, "band", "explorer"))
   readonly property var rules: Model.bandRules(band)
   readonly property string hourFormat: String(Model.setting(config, "hourFormat", "12"))
@@ -41,9 +51,17 @@ Item {
   // and coordinates from the city list when the zone or the setting matches.
   property string homeZone: ""
   readonly property int homeOffsetSeconds: -(new Date(nowMs).getTimezoneOffset()) * 60
-  readonly property var homeCity: Model.findCity(cities, homeCitySetting !== "" ? homeCitySetting : homeZone)
-  readonly property string homeName: homeCity ? homeCity.name
-    : (homeCitySetting !== "" ? homeCitySetting : (homeZone !== "" ? homeZone.split("/").pop().replace(/_/g, " ") : "home"))
+  // The place the setting names, when the city list knows it. The setting is
+  // free text: anything can be typed there, and a hamlet the list has never
+  // heard of is still what home is called.
+  readonly property var namedCity: Model.findCity(cities, homeCitySetting)
+  // Where home sits on the map and the globe, and which sunrise its sky
+  // follows: the named city when there is one, otherwise the city that stands
+  // for the computer's time zone. The clock itself never leaves that zone.
+  readonly property var homeCity: namedCity ? namedCity : Model.findCity(cities, homeZone)
+  readonly property string homeName: homeCitySetting !== ""
+    ? (namedCity ? namedCity.name : homeCitySetting)
+    : (homeCity ? homeCity.name : (homeZone !== "" ? homeZone.split("/").pop().replace(/_/g, " ") : "home"))
 
   // The instant shown: now, plus whatever the child has scrubbed.
   property double nowMs: Date.now()
@@ -211,48 +229,17 @@ Item {
     }
   }
 
-  onSourceDirChanged: if (sourceDir !== "") { citiesFile.reload(); landFile.reload(); globeFile.reload(); themeList.running = true }
-
-  // ---- the themes, for the Theme screen: every theme folder with its
-  // colours, the one in use, and the switch itself through omarchy-theme-set,
-  // which re-tints this plugin along with everything else.
-  property var themes: []
-  property string themeSlug: ""
-  readonly property string themeTitle: Model.themeTitle(themeSlug)
-
-  Process {
-    id: themeList
-    command: ["bash", root.sourceDir + "/bin/list-themes"]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.themes = Model.parseThemeLines(text)
-    }
+  function loadData() {
+    if (sourceDir === "") return
+    citiesFile.reload()
+    landFile.reload()
+    globeFile.reload()
   }
 
-  FileView {
-    id: themeName
-    path: Quickshell.env("HOME") + "/.local/state/omarchy/current/theme.name"
-    watchChanges: true
-    printErrors: false
-    onLoaded: root.themeSlug = String(text()).trim()
-    onFileChanged: reload()
-  }
-
-  function applyTheme(slug) {
-    var name = String(slug || "").replace(/[^A-Za-z0-9._-]/g, "")
-    if (name === "" || themeSetter.running) return false
-    themeSetter.command = ["omarchy-theme-set", name]
-    themeSetter.running = true
-    return true
-  }
-
-  Process {
-    id: themeSetter
-    onExited: function(exitCode) {
-      if (exitCode !== 0) console.warn("kids-clock: omarchy-theme-set exited with", exitCode)
-      themeList.running = true
-    }
-  }
+  // The directory is known before the shell injects anything now, so the
+  // change handler alone would never fire.
+  onSourceDirChanged: loadData()
+  Component.onCompleted: loadData()
 
   Timer {
     interval: 1000

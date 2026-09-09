@@ -22,6 +22,22 @@ check("settings are found on the bar entry or in plugins[]", () => {
   assert.deepStrictEqual(Model.settingsFor(null, "x"), {})
 })
 
+check("settings are found when the shell hands over the bar on its own", () => {
+  // Omarchy 4.0.3 injects a scoped API whose barConfig is the bar half of the
+  // config, not the whole file; both shapes have to find the same entry.
+  const bar = { layout: { right: [{ id: "ignibyte.kids-clock", band: "navigator" }] } }
+  assert.strictEqual(Model.settingsFor(bar, "ignibyte.kids-clock").band, "navigator")
+  assert.strictEqual(Model.settingsFor({ bar: bar }, "ignibyte.kids-clock").band, "navigator")
+  assert.deepStrictEqual(Model.settingsFor({ layout: {} }, "ignibyte.kids-clock"), {})
+})
+
+check("the plugin finds its own directory when the manifest no longer carries it", () => {
+  assert.strictEqual(Model.dirFromUrl("file:///home/a/.config/omarchy/plugins/p/"), "/home/a/.config/omarchy/plugins/p")
+  assert.strictEqual(Model.dirFromUrl("file:///home/a%20b/p"), "/home/a b/p")
+  assert.strictEqual(Model.dirFromUrl("/already/a/path/"), "/already/a/path")
+  assert.strictEqual(Model.dirFromUrl(""), "")
+})
+
 check("clock strings parse, with am/pm and fallbacks", () => {
   assert.strictEqual(Model.parseClock("07:30", 0), 450)
   assert.strictEqual(Model.parseClock("8pm", 0), 20 * 60)
@@ -168,6 +184,23 @@ check("the face: rounding, hand angles and the words for a time", () => {
   assert.strictEqual(Model.bandRules("explorer").face, false)
   assert.strictEqual(Model.bandRules("tinkerer").gameStep, 15)
   assert.strictEqual(Model.bandRules("navigator").gameStep, 5)
+})
+
+check("the round home plays against itself is in the second person", () => {
+  const routine = Model.routineFrom({})
+  const home = { name: "Chicago", city: "Chicago", zone: "America/Chicago", lat: 41.88, lon: -87.63, self: true }
+  const round = Model.gameRound(home, { offsetSeconds: -18000 }, Date.parse("2026-09-09T13:40:00Z"),
+    routine, Model.bandRules("navigator"), "12")
+  assert.strictEqual(round.title, "Your clock")
+  assert.ok(round.prompt.endsWith(" here."))
+  assert.ok(round.solvedSentence.indexOf("You are probably ") !== -1)
+
+  const grandma = { name: "Grandma", city: "Phoenix", zone: "America/Phoenix", lat: 33.45, lon: -112.07 }
+  const other = Model.gameRound(grandma, { offsetSeconds: -25200 }, Date.parse("2026-09-09T13:40:00Z"),
+    routine, Model.bandRules("navigator"), "12")
+  assert.strictEqual(other.title, "Grandma's clock")
+  assert.ok(other.prompt.indexOf(" in Phoenix.") !== -1)
+  assert.ok(other.solvedSentence.indexOf("Grandma is probably ") !== -1)
 })
 
 check("a game round freezes the person's time, rounds it and starts the hands at twelve", () => {
@@ -383,15 +416,6 @@ check("a tapped spot says the time there in words", () => {
     { offsetSeconds: -5 * 3600 }, utc, home, routine, rules, "12")
   assert.strictEqual(here.sentence, "It's evening here in Chicago.")
   assert.strictEqual(here.offsetWords, "", "home is not ahead of or behind itself")
-})
-
-check("theme folders become titles and swatches", () => {
-  assert.strictEqual(Model.themeTitle("tokyo-night"), "Tokyo Night")
-  assert.strictEqual(Model.themeTitle("catppuccin-latte"), "Catppuccin Latte")
-  const themes = Model.parseThemeLines("tokyo-night\t#1a1b26\t#a9b1d6\t#7aa2f7\tdark\nbad line\nwhite\t#ffffff\t#000000\t#0055aa\tlight\n")
-  assert.deepStrictEqual(themes.map(t => t.title), ["Tokyo Night", "White"])
-  assert.strictEqual(themes[1].light, true)
-  assert.strictEqual(themes[0].accent, "#7aa2f7")
 })
 
 check("many zones are asked in one process and parsed back by name", () => {

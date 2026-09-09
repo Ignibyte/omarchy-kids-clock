@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "ignibyte.kids-clock",
   "name": "Sun Clock",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "author": "Ignibyte",
   "license": "MIT",
   "description": "A clock for kids: where the sun is over the people you love, and whether they are awake.",
@@ -60,7 +60,7 @@
         "type": "string",
         "label": "Home city",
         "defaultValue": "",
-        "description": "Blank picks the city that matches the system time zone."
+        "description": "What home is called. Free text: a city from the built-in list also places home on the map and the globe, anything else is only the name. Blank picks the city that matches the system time zone. Home's clock always follows the system time zone either way."
       },
       {
         "key": "wakeTime",

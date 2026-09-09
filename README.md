@@ -13,6 +13,10 @@ back an hour at a time, so a child can watch it become bedtime in Tokyo.
 
 ![The big clock on the Explorer face, Tokyo Night theme](preview.png)
 
+Before anyone is added there is still a clock: home fills the card, its own
+sky and, on the bands that have one, a full-size face. Earlier and Later move
+that sun, and the game plays against your own clock.
+
 From the second band an analog face sits beside the digits, showing the same
 time, and a button opens a small game: set the hands to Grandma's time. The sun
 under the face follows the hands, and the round is won when it sits in the
@@ -23,8 +27,7 @@ ring where Grandma's sun really is.
 Every band gets the globe: the earth as dots, the night side shaded, and a
 marker for home, for each person and for fifty well-known places. Turn it
 with two buttons or a drag, tap a place, and the clock says what time it is
-there. A Theme button switches the whole computer to another of Omarchy's
-themes, and the clock changes with it.
+there.
 
 ![The globe, turned to Sydney](preview-globe.png)
 
@@ -58,17 +61,6 @@ what a child there is probably doing, which is the family's own routine moved
 to that place, the same honest guess the cards make. Earlier and Later move
 the sun here too, and the night sweeps round the globe as it goes.
 
-## Pick a look
-
-Theme shows one tile per installed theme, painted in that theme's own
-background and accent with the current one marked. Tapping a tile runs
-`omarchy-theme-set`, the same switch the Omarchy menu uses, so the whole
-computer changes and this clock changes with it, because everything it draws
-is bound to the theme tokens. The tile colours are read from each theme's
-`colors.toml` by `bin/list-themes`.
-
-![The theme screen](preview-theme.png)
-
 ## The map
 
 On the Navigator band, The map swaps the clock for a map of the world with the
@@ -100,8 +92,8 @@ omarchy plugin enable ignibyte.kids-clock right
 ```
 
 The plugin lands disabled so you can read the code first. It needs nothing
-beyond an Omarchy 4 install: `bash`, GNU `date`, `timedatectl` and
-`omarchy-theme-set` are all there already, and `node` is only for the test.
+beyond an Omarchy 4 install: `bash`, GNU `date` and `timedatectl` are all
+there already, and `node` is only for the test.
 
 ### Removing
 
@@ -117,18 +109,13 @@ you want them back.
 ### What it touches
 
 Omarchy plugins run unsandboxed inside `omarchy-shell` with your permissions.
-This one runs `bash` (for `bin/list-themes` and a one-line loop that asks
-`date` for each zone's offset), `timedatectl` for the system zone,
-`omarchy-shell` from the bar chip to open the big clock, and
-`omarchy-theme-set` when a theme tile is tapped. It reads its own `data/`
-files, the current theme's name in `~/.local/state/omarchy/current/`, and each
-theme's `colors.toml` under `~/.config/omarchy/themes` and
-`/usr/share/omarchy/themes`. It makes no network requests of its own. The only
-thing it writes is its own entry in `~/.config/omarchy/shell.json`, through
-the shell's own save call, when someone adds or removes a person or picks
-home. A theme switch is Omarchy's own pipeline and does whatever it does on
-your machine, including reaching the network for editors that take extensions.
-There is no lock on the People or Theme screens: a child can reach them too.
+This one runs `bash` (a one-line loop that asks `date` for each zone's
+offset), `timedatectl` for the system zone, and `omarchy-shell` from the bar
+chip to open the big clock. It reads its own `data/` files and nothing else on
+disk. It makes no network requests of its own. The only thing it writes is its
+own entry in `~/.config/omarchy/shell.json`, through the shell's own save call,
+when someone adds or removes a person or names home. There is no lock on the
+People screen: a child can reach it too.
 
 ## Adding people
 
@@ -139,9 +126,14 @@ letters of the town or city and pick it from the matches; about 1,460
 places are built in, and a name shared by several places, such as Portland,
 is stored with its region so it comes back as itself. A place that is not
 in the list can be given as a time zone, such as `America/Phoenix`. Each
-person has a Remove button that asks once. The Home row picks the home city
-when the computer's time zone is a region rather than your town, so the
-sunrise is right.
+person has a Remove button that asks once.
+
+The Home row is different, because home's clock is the computer's own and
+never moves off the system time zone. So home takes free text: a town, a
+street, "the house on the hill". Whatever is typed is what home is called.
+Picking a real place from the list does one thing more — it puts home on the
+map and the globe, and gives the sky the right sunrise for that latitude
+instead of the one that belongs to the system zone.
 
 ![The People screen asking where Nana lives](preview-people.png)
 
@@ -151,7 +143,7 @@ the command line sees the same values.
 
 ## Settings
 
-Omarchy 4.0.2 has no settings screen for plugins yet. Apart from the People
+Omarchy has no settings screen for plugins yet. Apart from the People
 screen, the settings are edited on the command line or in the plugin's entry
 in `~/.config/omarchy/shell.json`:
 
@@ -164,7 +156,7 @@ omarchy-shell shell setBarWidget ignibyte.kids-clock people '"Grandma=Phoenix; N
 |---|---|---|
 | `band` | `explorer` | `explorer`, `tinkerer` or `navigator` |
 | `people` | `Grandma=Phoenix; Cousin Mia=Berlin; Uncle Ken=Tokyo` | `Name=City` pairs separated by semicolons, which the People screen edits. Cities from the built-in list of about 1,460, `City, Region` when the name is shared, or any IANA zone such as `America/Phoenix`; a zone tzdata does not know is reported as unknown rather than shown as UTC. Names up to 40 characters, places up to 64, at most 32 pairs kept. An empty value shows nobody; a missing key shows these three examples |
-| `homeCity` | blank | The city that matches the system time zone. Set it, or pick it on the People screen, when the system zone is a region rather than your town, so the sunrise is right |
+| `homeCity` | blank | What home is called, as free text. Blank uses the city that matches the system time zone. A city from the built-in list also places home on the map and the globe and gives its sky the right sunrise; anything else is only the name. Home's clock follows the system time zone either way |
 | `wakeTime`, `schoolStart`, `schoolEnd`, `dinnerTime`, `bedTime` | `07:00`, `08:30`, `15:00`, `18:00`, `20:00` | The family routine. "Uncle Ken is probably at school" means the child's own routine moved to Tokyo, which is honest and personal rather than a guess about another country |
 | `hourFormat` | `12` | `12` or `24`, for the bands that show digits |
 
@@ -189,14 +181,12 @@ Only the ones that mean something right now are shown.
 | Map | the world map with the night side (navigator) |
 | Globe | the globe; under it two round buttons turn it, and Find home brings it back to home |
 | People | the People screen, where a parent adds and removes people |
-| Theme | the theme screen |
-| Clock | back to the clock from the map, the globe or the theme screen |
+| Clock | back to the clock from the map or the globe |
 | Close | closes the big clock; so does a click outside the card |
 
 The keys do the same for anyone at a keyboard: Left and Right move the sun
 (a quarter hour with Shift), 0 comes back to now, Enter opens the game, M is
-the map, G the globe, P people, T the theme screen, and Escape steps back and
-finally closes.
+the map, G the globe, P people, and Escape steps back and finally closes.
 
 A view can be opened directly, which suits a keybinding:
 
@@ -205,12 +195,12 @@ omarchy-shell shell toggle ignibyte.kids-clock '{"view":"map"}'
 omarchy-shell shell toggle ignibyte.kids-clock '{"view":"game"}'
 omarchy-shell shell toggle ignibyte.kids-clock '{"view":"people"}'
 omarchy-shell shell toggle ignibyte.kids-clock '{"view":"globe"}'
-omarchy-shell shell toggle ignibyte.kids-clock '{"view":"theme"}'
 ```
 
 ## The set-the-clock game
 
-One person at a time. Their time is frozen as the round starts and rounded
+One person at a time, or your own clock when nobody has been added yet.
+Their time is frozen as the round starts and rounded
 to the band's step, and the words say it the way school does: "It's about
 quarter to three in the afternoon in Phoenix." The hands start at twelve in
 the same half of the day, like a toy clock reset (at nine when the answer is

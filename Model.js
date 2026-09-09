@@ -24,6 +24,18 @@ function bandRules(band) {
   return Object.prototype.hasOwnProperty.call(BANDS, key) ? BANDS[key] : BANDS.explorer
 }
 
+// The plugin's own directory as a plain path, from the URL QML resolves a
+// relative name against. Omarchy 4.0.3 strips `__sourceDir` from the manifest
+// a third-party plugin is handed, so the files beside this one are found the
+// only way left: by asking QML where this file is.
+function dirFromUrl(url) {
+  var text = String(url || "")
+  if (text.indexOf("file://") === 0) text = text.slice(7)
+  try { text = decodeURIComponent(text) } catch (e) { /* leave it as it came */ }
+  while (text.length > 1 && text.charAt(text.length - 1) === "/") text = text.slice(0, -1)
+  return text
+}
+
 function trim(value) {
   return value === undefined || value === null ? "" : String(value).trim()
 }
@@ -41,10 +53,15 @@ function isZone(text) {
 
 // The plugin's inline entry in shell.json: a bar widget entry in one of the
 // three sections, or a plugins[] entry. Same walk the Stay Awake plugin uses.
-function settingsFor(shellConfig, pluginId) {
+// `config` is either the whole shell config, which carries the bar under
+// `bar`, or the bar object on its own. Omarchy 4.0.3 hands a plugin the
+// second: the capability-scoped shell API has `barConfig` where the shell
+// used to have `shellConfig`.
+function settingsFor(config, pluginId) {
   var id = String(pluginId || "")
-  if (!shellConfig || typeof shellConfig !== "object") return {}
-  var bar = shellConfig.bar
+  if (!config || typeof config !== "object") return {}
+  var shellConfig = config
+  var bar = config.bar && typeof config.bar === "object" ? config.bar : config
   if (bar && typeof bar === "object" && bar.layout && typeof bar.layout === "object") {
     var sections = ["left", "center", "right"]
     for (var s = 0; s < sections.length; s++) {
@@ -627,8 +644,13 @@ function gameRound(person, offsetInfo, frozenMs, routine, rules, hourFormat) {
   var goal = skyPosition(goalMs, solarTimesFor(goalMs, person, offset))
   var activity = activityAt(target, routine, parts.weekend)
   var words = clockWords(target) + " " + dayPartWords(target)
+  // `self` marks the round the child plays against their own clock, the one
+  // there is before anyone has been added. It is the same round in the second
+  // person: "your clock", "here", "you are probably".
+  var self = person.self === true
   return {
     name: person.name,
+    title: self ? "Your clock" : person.name + "'s clock",
     city: person.city,
     zone: person.zone,
     lat: person.lat === undefined ? null : person.lat,
@@ -640,9 +662,12 @@ function gameRound(person, offsetInfo, frozenMs, routine, rules, hourFormat) {
     startHands: start,
     targetWords: words,
     targetDigits: rules && rules.digits ? formatTime(Math.floor(target / 60), target % 60, hourFormat) : "",
-    prompt: "It's about " + words + " in " + person.city + ".",
+    prompt: self ? "It's about " + words + " here."
+      : "It's about " + words + " in " + person.city + ".",
     task: "Turn the hands until the " + (goal.isDay ? "sun" : "moon") + " sits in the ring.",
-    solvedSentence: "That's it! In " + person.city + " it's about " + words + ". " + person.name + " is probably " + activity.label + ".",
+    solvedSentence: self
+      ? "That's it! Here it's about " + words + ". You are probably " + activity.label + "."
+      : "That's it! In " + person.city + " it's about " + words + ". " + person.name + " is probably " + activity.label + ".",
     goalIsDay: goal.isDay,
     goalT: clamp01(goal.t)
   }
@@ -932,38 +957,11 @@ function spotView(spot, offsetInfo, utcMs, home, routine, rules, hourFormat) {
   }
 }
 
-// ---- the themes. A folder name becomes a title the way omarchy-theme-list
-// makes one, and the lines the listing script prints become swatches.
-
-function themeTitle(slug) {
-  return String(slug || "").split("-").map(function(word) {
-    return word === "" ? "" : word.charAt(0).toUpperCase() + word.slice(1)
-  }).join(" ")
-}
-
-var THEME_SLUG = /^[a-z0-9][a-z0-9._-]*$/
-var THEME_COLOUR = /^#[0-9a-fA-F]{3,8}$/
-
-// A theme folder is trusted only as far as it parses: a lowercase slug the
-// theme switch would accept, and three hex colours for the swatch.
-function parseThemeLines(text) {
-  var out = []
-  var lines = String(text || "").split("\n")
-  for (var i = 0; i < lines.length; i++) {
-    var cells = lines[i].split("\t")
-    if (cells.length < 4 || !THEME_SLUG.test(cells[0])) continue
-    if (!THEME_COLOUR.test(cells[1]) || !THEME_COLOUR.test(cells[2]) || !THEME_COLOUR.test(cells[3])) continue
-    out.push({ slug: cells[0], title: themeTitle(cells[0]), background: cells[1], foreground: cells[2],
-      accent: cells[3], light: (cells[4] || "").trim() === "light" })
-  }
-  out.sort(function(a, b) { return a.title.localeCompare(b.title) })
-  return out
-}
-
 if (typeof module !== "undefined") {
   module.exports = {
     bandRules: bandRules,
     settingsFor: settingsFor,
+    dirFromUrl: dirFromUrl,
     setting: setting,
     parseClock: parseClock,
     routineFrom: routineFrom,
@@ -1022,8 +1020,6 @@ if (typeof module !== "undefined") {
     globeSpotList: globeSpotList,
     globeMarkers: globeMarkers,
     spotView: spotView,
-    themeTitle: themeTitle,
-    parseThemeLines: parseThemeLines,
     MOON_GLYPH: MOON_GLYPH
   }
 }
