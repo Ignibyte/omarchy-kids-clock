@@ -20,8 +20,8 @@ rather than on work.
 |---|---|---|
 | [#2](../../issues/2) | Moon phases | Smallest thing on the list. No network, no new data — the phase is arithmetic of the same family as the sunrise equation already in `Model.js`. Nothing to decide first. |
 | [#5](../../issues/5) | The two days side by side, on a person's page | The best payoff for the work. "Can I call Grandma?" is what this plugin is for, and it currently answers with a sentence when it could answer with a picture. Everything it needs is already computed. |
-| [#10](../../issues/10) | A parent-gated way to change the age band | The band decides what a child sees, and today it can only be changed from a terminal. The original design said "behind sudo" and that never got built. Someone hit it in the wild. |
-| [#11](../../issues/11) | Call status that survives greyscale | Since the words moved to the person's page, one small dot carries the whole answer on the card, and two of its three states are the same colour at different alphas. |
+| [#10](../../issues/10) | A parent-gated way to change the age band | The band decides what a child sees, and today it can only be changed from a terminal. The original design said "behind sudo" and that never got built. Raised by [@kenhara](../../issues/6) after hitting it in front of his own family. |
+| [#11](../../issues/11) | Call status that survives greyscale | Since the words moved to the person's page, one small dot carries the whole answer on the card, and two of its three states are the same colour at different alphas. Came out of [@kenhara's](../../issues/6) read of the card. |
 | [#7](../../issues/7) | Widen the place list | A small town cannot be found, so a child is told their grandmother lives in the nearest city. One decision (which source) and a data file. |
 | [#1](../../issues/1) | Weather | Wants a decision before it wants work: this would put the plugin on the network for the first time. Opt-in and off by default is the recommendation. |
 | [#8](../../issues/8) | The child's own day, and screen time | The one slice of the original plan never built, and the reason the clock exists. The day track needs nobody; the screen time bar waits on a state file contract that has no owner yet. |
@@ -57,6 +57,18 @@ Things waiting on a person, not on code.
   chrome around them does not. See the README.
 - **Enforcing anything.** The clock shows time and never takes it away.
   Enforcement is root's job — anything a child can edit, a child can defeat.
+
+## Where these came from
+
+Four of the items above are the plugin's own unfinished business, written down
+before any of it was built and never done: the place list, the child's own day
+track, speaking the sentence, and gating the band.
+
+Two came from [@kenhara](../../issues/6), who ran 0.17.0 with his children and
+wrote up what he found — the first report from outside. He talked himself out
+of both before anyone answered; one of them was right the first time and the
+other found something he wasn't looking for. That is what a good bug report
+looks like, and it is worth saying so.
 
 ## Contributing
 
