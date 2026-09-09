@@ -6,9 +6,10 @@ awake right now, and can I call her?
 
 Time is abstract for a young child, so this clock does not lead with digits.
 Each place gets a sky with the sun on its arc by day and the moon by night,
-and the sky itself changes: darker overhead, lighter towards the horizon, and
-warmed as the sun gets near it, so dawn and dusk look like dawn and dusk. A
-sentence says what time of day it is there in words. Each person gets a card:
+and the sky itself says which it is: a gradient that is darker overhead and
+lighter towards the horizon, warming as the sun gets near it, with a few
+clouds by day and a field of stars by night. A sentence says what time of day
+it is there in words. Each person gets a card:
 their own sky, whether they are awake, what they are probably doing, and
 whether it is a good time to call. Two buttons move the sun forward and
 back an hour at a time, so a child can watch it become bedtime in Tokyo.
@@ -33,10 +34,19 @@ switched at the top of the screen.
 
 ![The globe, turned to Sydney](preview-globe.png)
 
-The plugin binds to Omarchy's theme tokens and ships no colours of its own.
-The sun is the theme accent and the moon is the theme foreground, and even the
-sky's gradient is those two at an alpha, so the whole thing re-tints when the
-theme changes, like the rest of the shell.
+The plugin binds to Omarchy's theme tokens: every surface, every border, every
+piece of text and the whole of the sky's gradient is `Color.*` at some alpha,
+so it re-tints when the theme changes, like the rest of the shell.
+
+The sun and the moon are the one exception, on purpose. They are not chrome —
+they are a picture of the sky, and on a theme with a blue accent a blue sun is
+simply not a sun. So the sun is warm and the moon is bone-pale, and everything
+around them still follows the theme.
+
+Nothing here is an image file. The clouds are overlapping circles flattened
+into one shape, the stars a fixed scatter, the land on the map and the globe a
+path built from the data at draw time. It all scales to any size, re-tints
+with the theme, and costs nothing to ship.
 
 ## The three faces
 

@@ -797,6 +797,63 @@ function gameView(round, hands) {
   }
 }
 
+// ---- what is in the sky besides the sun. Both are worked out once, in
+// fractions of the sky's own box, so they scale with it and never jump about
+// as it is redrawn or resized. Deterministic: the same sky every time, which
+// is what a sky is.
+
+// A small repeatable generator, so "scattered" does not mean "different on
+// every frame".
+function scatter(seed) {
+  var value = seed
+  return function() {
+    value = (value * 1103515245 + 12345) % 2147483648
+    return value / 2147483648
+  }
+}
+
+// Stars for the night sky, in the top three quarters of the box so none of
+// them sits under the horizon. `size` is a fraction of the box's height.
+function starPoints(count) {
+  var next = scatter(20260909)
+  var out = []
+  for (var i = 0; i < count; i++) {
+    out.push({
+      x: 0.03 + next() * 0.94,
+      y: 0.05 + next() * 0.62,
+      size: 0.014 + next() * 0.020,
+      alpha: 0.35 + next() * 0.5
+    })
+  }
+  return out
+}
+
+// Clouds for the day sky: each one a run of overlapping puffs, so a cloud is
+// a cloud shape rather than a circle. `x` and `y` are the left end.
+function cloudPoints(count) {
+  var next = scatter(747474)
+  var out = []
+  for (var i = 0; i < count; i++) {
+    var puffs = []
+    var runs = 4 + Math.floor(next() * 2)
+    for (var p = 0; p < runs; p++) {
+      // Bigger puffs sit lower, so the bottoms line up and the top is the
+      // lumpy edge, which is what makes a row of circles read as a cloud.
+      var r = 0.72 + next() * 0.62
+      puffs.push({ dx: p * 0.46, dy: (1 - r) * 0.62, r: r })
+    }
+    out.push({
+      // One to a stretch of sky, so two clouds never pile up into a blob.
+      x: (i / count) * 0.7 + 0.04 + next() * 0.08,
+      y: 0.14 + next() * 0.3,
+      scale: 0.19 + next() * 0.1,
+      alpha: 0.055 + next() * 0.045,
+      puffs: puffs
+    })
+  }
+  return out
+}
+
 // ---- the map
 
 // Where the sun is straight overhead. The latitude is the declination; the
@@ -1061,6 +1118,8 @@ if (typeof module !== "undefined") {
     settingsFor: settingsFor,
     settingsLanded: settingsLanded,
     dirFromUrl: dirFromUrl,
+    starPoints: starPoints,
+    cloudPoints: cloudPoints,
     setting: setting,
     parseClock: parseClock,
     routineFrom: routineFrom,

@@ -48,8 +48,18 @@ Item {
   // Every colour derives from the theme: the sun is the accent, the moon is
   // the foreground, the skies are the foreground or a darkened background at
   // low alpha. Nothing here is a fixed hex.
-  readonly property color sunColor: Color.accent
-  readonly property color moonColor: foreground
+  // Chrome follows the theme, as everything in an Omarchy surface should.
+  readonly property color accent: Color.accent
+  // The sun and the moon are the exception, and deliberately: they are not
+  // chrome, they are a picture of the sky, and on a theme with a blue accent
+  // a blue sun is just wrong. Warm enough to read as the sun on a dark theme
+  // and on a light one. The moon takes the theme foreground, which is pale
+  // against a dark sky and dark against a bright one, like a real one.
+  readonly property color sunColor: "#f2a93b"
+  // The same sky every time: see Model.starPoints.
+  readonly property var starField: Model.starPoints(34)
+  readonly property var cloudField: Model.cloudPoints(3)
+  readonly property color moonColor: darkTheme ? "#f4f1e8" : Qt.darker(foreground, 1.05)
   // A near-black background has no darker to go, so on a dark theme day is
   // lifted and night sits a shade above the card; a light theme darkens.
   readonly property bool darkTheme: background.hsvValue < 0.5
@@ -602,12 +612,12 @@ Item {
     readonly property real glow: isDay
       ? Math.max(0, 1 - Math.min(clampedT, 1 - clampedT) * 5) : 0
     readonly property color skyTop: isDay
-      ? Util.alpha(root.foreground, root.darkTheme ? 0.05 : 0.03)
-      : Util.alpha(root.foreground, root.darkTheme ? 0.03 : 0.13)
+      ? Util.alpha(root.foreground, root.darkTheme ? 0.07 : 0.05)
+      : (root.darkTheme ? Util.alpha(root.background, 0.85) : Util.alpha(Qt.darker(root.background, 3.2), 0.82))
     readonly property color skyLow: isDay
-      ? Util.alpha(root.foreground, root.darkTheme ? 0.17 : 0.09)
-      : Util.alpha(root.foreground, root.darkTheme ? 0.10 : 0.21)
-    readonly property color skyHorizon: Qt.tint(skyLow, Util.alpha(root.sunColor, 0.30 * glow))
+      ? Util.alpha(root.foreground, root.darkTheme ? 0.20 : 0.11)
+      : (root.darkTheme ? Util.alpha(root.foreground, 0.11) : Util.alpha(Qt.darker(root.background, 2.2), 0.7))
+    readonly property color skyHorizon: Qt.tint(skyLow, Util.alpha(root.sunColor, 0.34 * glow))
 
     readonly property real angle: Math.PI * (1 - Math.max(0, Math.min(1, t)))
     readonly property real bodyX: width / 2 + radiusX * Math.cos(angle)
@@ -632,6 +642,56 @@ Item {
           position: 1
           color: sky.skyLow
           Behavior on color { ColorAnimation { duration: 300 } }
+        }
+      }
+    }
+
+    // Stars, in the night half of the day only, fading in with the dark.
+    Repeater {
+      model: sky.isDay ? [] : root.starField
+      Rectangle {
+        required property var modelData
+        readonly property real span: Math.max(2, modelData.size * sky.height)
+        x: modelData.x * sky.width - span / 2
+        y: modelData.y * sky.horizonY - span / 2
+        width: span
+        height: span
+        radius: span / 2
+        color: Util.alpha(root.moonColor, modelData.alpha * 0.8)
+        opacity: sky.isDay ? 0 : 1
+        Behavior on opacity { NumberAnimation { duration: 400 } }
+      }
+    }
+
+    // Clouds, by day, and only where there is room for one to read as a
+    // cloud rather than a smudge.
+    Repeater {
+      model: sky.isDay && sky.height > Style.space(120) ? root.cloudField : []
+      Item {
+        id: cloud
+        required property var modelData
+        readonly property real puff: modelData.scale * sky.height
+        x: modelData.x * sky.width
+        y: modelData.y * sky.horizonY
+        // A layer clips to the item, so the box has to hold every puff.
+        width: puff * (modelData.puffs.length * 0.46 + 1.5)
+        height: puff * 2
+        // Flattened into one layer and faded as a whole, or the puffs show
+        // through one another and it reads as a heap of circles.
+        layer.enabled: true
+        opacity: modelData.alpha
+        Repeater {
+          model: cloud.modelData.puffs
+          Rectangle {
+            required property var modelData
+            readonly property real span: modelData.r * cloud.puff
+            x: modelData.dx * cloud.puff
+            y: (modelData.dy + 0.3) * cloud.puff
+            width: span
+            height: span
+            radius: span / 2
+            color: root.foreground
+          }
         }
       }
     }
@@ -676,7 +736,7 @@ Item {
       Behavior on x { NumberAnimation { duration: 420; easing.type: Easing.OutCubic } }
       Behavior on y { NumberAnimation { duration: 420; easing.type: Easing.OutCubic } }
 
-      // The sun: a full accent disc.
+      // The sun.
       Rectangle {
         visible: sky.isDay
         anchors.fill: parent
@@ -814,7 +874,7 @@ Item {
           width: Style.space(spotDot.chosen ? 14 : 9)
           height: width
           radius: width / 2
-          color: spotDot.chosen ? root.sunColor : Util.alpha(root.foreground, 0.55)
+          color: spotDot.chosen ? root.accent : Util.alpha(root.foreground, 0.55)
           border.width: spotDot.chosen ? Math.max(2, Style.space(2)) : 0
           border.color: root.foreground
           Behavior on width { NumberAnimation { duration: 140 } }
@@ -848,7 +908,7 @@ Item {
           radius: width / 2
           x: -width / 2
           y: -height / 2
-          color: modelData.home ? "transparent" : root.sunColor
+          color: modelData.home ? "transparent" : root.accent
           border.width: modelData.home ? Math.max(2, Style.space(3)) : 0
           border.color: root.foreground
         }
@@ -988,7 +1048,7 @@ Item {
       radius: width / 2
       color: root.dial
       border.width: face.rim
-      border.color: face.solved ? root.sunColor : root.horizon
+      border.color: face.solved ? root.accent : root.horizon
       Behavior on border.color { ColorAnimation { duration: 300 } }
     }
 
@@ -1064,7 +1124,7 @@ Item {
       width: Math.max(6, face.r * 0.11)
       height: width
       radius: width / 2
-      color: root.sunColor
+      color: root.accent
       x: face.cx - width / 2
       y: face.cy - height / 2
     }
@@ -1077,6 +1137,8 @@ Item {
     property string caption: ""
     property int delta: 5
     property bool spins: false
+    property bool homes: false
+    property int glyphSize: Style.font.displayLarge
     spacing: Style.spacing.xs
 
     Rectangle {
@@ -1084,8 +1146,8 @@ Item {
       width: Style.space(60)
       height: width
       radius: width / 2
-      color: turnPress.pressed ? Style.pressedFillFor(root.foreground, root.sunColor)
-        : (turnPress.containsMouse ? Style.hoverFillFor(root.foreground, root.sunColor) : Util.alpha(root.foreground, 0.07))
+      color: turnPress.pressed ? Style.pressedFillFor(root.foreground, root.accent)
+        : (turnPress.containsMouse ? Style.hoverFillFor(root.foreground, root.accent) : Util.alpha(root.foreground, 0.07))
       border.width: Math.max(1, Style.space(1))
       border.color: Util.alpha(root.foreground, 0.2)
       Behavior on color { ColorAnimation { duration: 120 } }
@@ -1096,7 +1158,7 @@ Item {
         text: turnButton.glyph
         color: root.foreground
         font.family: root.fontFamily
-        font.pixelSize: Style.font.displayLarge
+        font.pixelSize: turnButton.glyphSize
         font.bold: true
       }
 
@@ -1105,7 +1167,8 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: turnButton.spins ? root.spinGlobe(turnButton.delta) : root.turn(turnButton.delta)
+        onClicked: turnButton.homes ? root.centreGlobeOnHome()
+          : (turnButton.spins ? root.spinGlobe(turnButton.delta) : root.turn(turnButton.delta))
       }
     }
 
@@ -1247,7 +1310,7 @@ Item {
           y: -height / 2
           color: "transparent"
           border.width: Math.max(2, Style.space(2))
-          border.color: root.sunColor
+          border.color: root.accent
         }
 
         Rectangle {
@@ -1256,7 +1319,7 @@ Item {
           radius: width / 2
           x: -width / 2
           y: -height / 2
-          color: marker.spot.kind === "home" ? "transparent" : (marker.spot.kind === "person" ? root.sunColor : Util.alpha(root.foreground, 0.85))
+          color: marker.spot.kind === "home" ? "transparent" : (marker.spot.kind === "person" ? root.accent : Util.alpha(root.foreground, 0.85))
           border.width: marker.spot.kind === "home" ? Math.max(2, Style.space(3)) : 0
           border.color: root.foreground
         }
@@ -1668,7 +1731,7 @@ Item {
                     visible: personCard.row.ready
                     textFormat: Text.PlainText
                     text: personCard.row.callWords + (personCard.squeeze === 0 && personCard.row.offsetWords !== "" ? personCard.dot + personCard.row.offsetWords : "")
-                    color: personCard.row.call === "good" ? root.sunColor : root.quiet
+                    color: personCard.row.call === "good" ? root.accent : root.quiet
                     font.family: root.fontFamily
                     font.pixelSize: personCard.dense ? Style.font.body : Style.font.title
                     font.bold: personCard.row.call === "good"
@@ -1862,7 +1925,7 @@ Item {
               radius: root.cornerRadius
               color: Util.alpha(root.foreground, 0.06)
               border.width: Math.max(1, Style.space(2))
-              border.color: root.sunColor
+              border.color: root.accent
 
               TextInput {
                 id: meField
@@ -1871,7 +1934,7 @@ Item {
                 anchors.rightMargin: Style.spacing.xl
                 verticalAlignment: TextInput.AlignVCenter
                 color: root.foreground
-                selectionColor: Util.alpha(root.sunColor, 0.5)
+                selectionColor: Util.alpha(root.accent, 0.5)
                 selectedTextColor: root.foreground
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.displayLarge
@@ -1942,7 +2005,7 @@ Item {
                   radius: root.cornerRadius
                   color: selected ? Color.menu.selectedBackground : Util.alpha(root.foreground, 0.04)
                   border.width: Math.max(1, Style.space(1))
-                  border.color: selected ? Util.alpha(root.sunColor, 0.8) : Util.alpha(root.foreground, 0.10)
+                  border.color: selected ? Util.alpha(root.accent, 0.8) : Util.alpha(root.foreground, 0.10)
 
                   MouseArea {
                     anchors.fill: parent
@@ -2039,7 +2102,7 @@ Item {
                 radius: root.cornerRadius
                 color: selected ? Color.menu.selectedBackground : Util.alpha(root.foreground, 0.04)
                 border.width: Math.max(1, Style.space(1))
-                border.color: selected ? Util.alpha(root.sunColor, 0.8) : Util.alpha(root.foreground, 0.10)
+                border.color: selected ? Util.alpha(root.accent, 0.8) : Util.alpha(root.foreground, 0.10)
                 Behavior on color { ColorAnimation { duration: 120 } }
 
                 MouseArea {
@@ -2064,7 +2127,7 @@ Item {
                     width: Style.space(personRow.modelData.kind === "home" ? 16 : 12)
                     height: width
                     radius: width / 2
-                    color: personRow.modelData.kind === "home" ? "transparent" : root.sunColor
+                    color: personRow.modelData.kind === "home" ? "transparent" : root.accent
                     border.width: personRow.modelData.kind === "home" ? Math.max(2, Style.space(3)) : 0
                     border.color: root.foreground
                   }
@@ -2073,7 +2136,7 @@ Item {
                     visible: personRow.modelData.kind === "add"
                     textFormat: Text.PlainText
                     text: "+"
-                    color: root.sunColor
+                    color: root.accent
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.display
                     font.bold: true
@@ -2179,7 +2242,7 @@ Item {
               radius: root.cornerRadius
               color: Util.alpha(root.foreground, 0.06)
               border.width: Math.max(1, Style.space(2))
-              border.color: root.sunColor
+              border.color: root.accent
 
               TextInput {
                 id: editField
@@ -2188,7 +2251,7 @@ Item {
                 anchors.rightMargin: Style.spacing.xl
                 verticalAlignment: TextInput.AlignVCenter
                 color: root.foreground
-                selectionColor: Util.alpha(root.sunColor, 0.5)
+                selectionColor: Util.alpha(root.accent, 0.5)
                 selectedTextColor: root.foreground
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.displayLarge
@@ -2269,7 +2332,7 @@ Item {
                   radius: root.cornerRadius
                   color: selected ? Color.menu.selectedBackground : Util.alpha(root.foreground, 0.04)
                   border.width: Math.max(1, Style.space(1))
-                  border.color: selected ? Util.alpha(root.sunColor, 0.8) : Util.alpha(root.foreground, 0.10)
+                  border.color: selected ? Util.alpha(root.accent, 0.8) : Util.alpha(root.foreground, 0.10)
 
                   MouseArea {
                     anchors.fill: parent
@@ -2366,14 +2429,7 @@ Item {
             anchors.topMargin: Style.spacing.sm
             spacing: Style.spacing.xl
             TurnButton { glyph: "‹"; caption: "turn it"; delta: -40; spins: true }
-            ActionButton {
-              id: findHome
-              anchors.verticalCenter: parent.verticalCenter
-              compact: true
-              text: Model.HOME_GLYPH
-              fontSize: Style.font.icon
-              onClicked: root.centreGlobeOnHome()
-            }
+            TurnButton { glyph: Model.HOME_GLYPH; caption: "home"; homes: true; glyphSize: Style.font.display }
             TurnButton { glyph: "›"; caption: "turn it"; delta: 40; spins: true }
           }
 
@@ -2515,7 +2571,7 @@ Item {
               textFormat: Text.PlainText
               text: (root.streak === 1 ? "1 right in a row" : root.streak + " right in a row")
                 + (root.bestStreak > 0 ? "  ·  best " + root.bestStreak : "")
-              color: root.streak > 0 ? root.sunColor : root.quiet
+              color: root.streak > 0 ? root.accent : root.quiet
               font.family: root.fontFamily
               font.pixelSize: Style.font.title
               font.bold: root.streak > 0
@@ -2550,7 +2606,7 @@ Item {
               height: Math.ceil(verdictMetrics.height * 2)
               textFormat: Text.PlainText
               text: root.checked ? root.verdict : ""
-              color: root.wasRight ? root.sunColor : root.foreground
+              color: root.wasRight ? root.accent : root.foreground
               font.family: root.fontFamily
               font.pixelSize: Style.font.heading
               wrapMode: Text.WordWrap
@@ -2623,12 +2679,12 @@ Item {
                   width: choiceGrid.cellW
                   height: Style.space(76)
                   radius: root.cornerRadius
-                  color: correct ? Util.alpha(root.sunColor, 0.22)
+                  color: correct ? Util.alpha(root.accent, 0.22)
                     : (picked ? Color.menu.selectedBackground : Util.alpha(root.foreground, 0.05))
                   border.width: Math.max(2, Style.space(2))
-                  border.color: correct ? root.sunColor
+                  border.color: correct ? root.accent
                     : (mistaken ? root.foreground
-                      : (picked ? Util.alpha(root.sunColor, 0.8) : Util.alpha(root.foreground, 0.18)))
+                      : (picked ? Util.alpha(root.accent, 0.8) : Util.alpha(root.foreground, 0.18)))
                   opacity: root.checked && !correct && !picked ? 0.4 : 1
                   Behavior on color { ColorAnimation { duration: 160 } }
                   Behavior on opacity { NumberAnimation { duration: 160 } }
