@@ -11,7 +11,7 @@ import "Model.js" as Model
 // the digits on the bands that read them, then a card for each person with
 // their own small sky, what they are probably doing, and whether it is a
 // good time to call. A row of buttons along the bottom does everything:
-// Earlier and Later move the sun an hour, Back to now undoes that, Play
+// The two arrows move the sun an hour, Now undoes that, Play
 // opens the game, Map swaps in the world with its night side on the band
 // that reads maps, Globe shows a globe to turn with well-known places to
 // tap for the time there, People opens the screen where a parent adds and
@@ -433,28 +433,40 @@ Item {
   // ---- the clock game. Two rounds, and both are about the face alone:
   // Set the clock puts a time in words and asks for the hands, Read the clock
   // sets the hands and asks for the time. No sun, no sky, no morning or
-  // afternoon: a dial says none of those, and pretending it did was what made
-  // the old round confusing.
+  // afternoon: a dial says none of those.
+  //
+  // Nothing says whether the answer is right until Check is pressed. A face
+  // that lights up the moment the hands land turns the game into turning the
+  // hands until it lights up, which is not reading a clock. One press, one
+  // answer, and the score is how many in a row.
   property bool playing: false
   property string gameMode: "set"     // set or read
   property var currentRound: null
   property int hands: 0
   property int chosen: -1
+  property bool checked: false
+  property bool wasRight: false
+  property int streak: 0
+
   readonly property var game: playing && currentRound && currentRound.mode === "set"
     ? Model.gameView(currentRound, hands) : null
-  readonly property bool solved: {
-    if (!playing || !currentRound) return false
-    if (currentRound.mode === "read") return chosen >= 0 && currentRound.choices[chosen].right
-    return game ? game.solved : false
-  }
-  readonly property bool wrongPick: playing && currentRound && currentRound.mode === "read"
-    && chosen >= 0 && !currentRound.choices[chosen].right
+  readonly property bool solved: checked && wasRight
+  // The best run so far, kept with the rest of the settings so it is still
+  // there tomorrow.
+  readonly property int bestStreak: clock ? Math.max(0, parseInt(Model.setting(clock.config, "bestStreak", 0), 10) || 0) : 0
+  readonly property bool canCheck: playing && !checked
+    && (gameMode === "read" ? chosen >= 0 : !!currentRound)
   readonly property string otherMode: gameMode === "set" ? "read" : "set"
   readonly property string otherModeName: gameMode === "set" ? "Read the clock" : "Set the clock"
-  // The band's own step: quarter hours while "half past" is still new, five
-  // minutes once it is not.
   readonly property int gameStep: rules && rules.gameStep > 0 ? rules.gameStep : 5
   readonly property string stepWords: gameStep === 15 ? "15 minutes" : gameStep + " minutes"
+
+  // What the round says once it has been answered: right, or what it was.
+  readonly property string verdict: {
+    if (!playing || !currentRound || !checked) return ""
+    if (wasRight) return currentRound.solvedSentence
+    return "Not this time. It was " + currentRound.words + "."
+  }
 
   function beginRound(mode) {
     if (!clock) return
@@ -463,6 +475,8 @@ Item {
     currentRound = Model.gameRound(gameMode, clock.rules, clock.hourFormat, null, previous)
     hands = currentRound.startHands
     chosen = -1
+    checked = false
+    wasRight = false
   }
 
   function startGame(mode) {
@@ -471,8 +485,23 @@ Item {
     showEarth = false
     showPeople = false
     showMe = false
+    streak = 0
     beginRound(mode || gameMode)
     playing = true
+  }
+
+  // The one press that decides the round. A wrong one ends the run; a right
+  // one adds to it, and a new best is written down.
+  function checkAnswer() {
+    if (!canCheck) return
+    var right = currentRound.mode === "read"
+      ? (chosen >= 0 && currentRound.choices[chosen].right)
+      : (!!game && game.solved)
+    checked = true
+    wasRight = right
+    if (!right) { streak = 0; return }
+    streak = streak + 1
+    if (streak > bestStreak) persistSettings({ bestStreak: streak })
   }
 
   function switchGameMode() {
@@ -482,12 +511,11 @@ Item {
   function nextRound() { beginRound(gameMode) }
 
   function turn(deltaMinutes) {
-    if (playing && currentRound && currentRound.mode === "set") hands = hands + deltaMinutes
+    if (playing && !checked && currentRound && currentRound.mode === "set") hands = hands + deltaMinutes
   }
 
   function pickTime(index) {
-    if (!playing || !currentRound || currentRound.mode !== "read") return
-    if (solved) return
+    if (!playing || !currentRound || currentRound.mode !== "read" || checked) return
     chosen = index
   }
 
@@ -495,6 +523,8 @@ Item {
     playing = false
     currentRound = null
     chosen = -1
+    checked = false
+    wasRight = false
   }
 
 
@@ -512,8 +542,6 @@ Item {
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
-  // Every way out lands on the clock next time: the shell's own hide (the
-  // bar chip, a keybinding built on toggle) as much as Escape or Close.
   // What Back means on each screen: one step out, never a jump. Inside the
   // add flow it walks back through the questions before leaving the list.
   function stepBack() {
@@ -1240,8 +1268,8 @@ Item {
   // thing they move, not down in the navigation.
   component SunRow: Row {
     spacing: Style.spacing.md
-    ActionButton { compact: true; text: "←  Earlier"; onClicked: if (root.clock) root.clock.scrub(-60) }
-    ActionButton { compact: true; text: "Later  →"; onClicked: if (root.clock) root.clock.scrub(60) }
+    ActionButton { compact: true; text: "←"; onClicked: if (root.clock) root.clock.scrub(-60) }
+    ActionButton { compact: true; text: "→"; onClicked: if (root.clock) root.clock.scrub(60) }
     ActionButton {
       compact: true
       primary: root.scrubbing
@@ -1358,7 +1386,8 @@ Item {
             }
           } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
             if (root.playing) {
-              if (root.solved) root.nextRound()
+              if (root.checked) root.nextRound()
+              else root.checkAnswer()
             } else if (toolbar.onClock) {
               root.startGame()
             }
@@ -1372,7 +1401,7 @@ Item {
             event.accepted = true
           } else if (event.key === Qt.Key_0 || event.key === Qt.Key_Home || event.key === Qt.Key_Space) {
             if (root.playing) {
-              if (root.solved && event.key === Qt.Key_Space) root.nextRound()
+              if (root.checked) root.nextRound()
               else if (root.currentRound) root.hands = root.currentRound.startHands
             } else if (root.clock) {
               root.clock.resetScrub()
@@ -2411,7 +2440,7 @@ Item {
             minutesOfDay: gameArea.reading
               ? (root.currentRound ? root.currentRound.shownMinutes : 0)
               : (root.game ? root.game.minutesOfDay : 0)
-            solved: root.solved
+            solved: root.checked && root.wasRight
           }
 
           Column {
@@ -2439,16 +2468,23 @@ Item {
               }
               ActionButton {
                 compact: true
-                visible: root.gameMode === "set" && !root.solved
+                visible: root.gameMode === "set" && !root.checked
                 text: "Start again"
                 onClicked: if (root.currentRound) root.hands = root.currentRound.startHands
               }
-              ActionButton {
-                compact: true
-                visible: root.solved
-                text: "Another one  →"
-                onClicked: root.nextRound()
-              }
+            }
+
+            // How the run is going. The best is kept with the settings, so it
+            // is still there next time.
+            Text {
+              width: parent.width
+              textFormat: Text.PlainText
+              text: (root.streak === 1 ? "1 right in a row" : root.streak + " right in a row")
+                + (root.bestStreak > 0 ? "  ·  best " + root.bestStreak : "")
+              color: root.streak > 0 ? root.sunColor : root.quiet
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.title
+              font.bold: root.streak > 0
             }
 
             Text {
@@ -2479,29 +2515,35 @@ Item {
               width: parent.width
               textFormat: Text.PlainText
               text: !root.currentRound ? ""
-                : (root.solved ? root.currentRound.solvedSentence
-                  : (root.wrongPick ? "Not that one. Look at the short hand first: which numeral has it just gone past?"
-                    : root.currentRound.task))
-              color: root.solved ? root.sunColor : root.quiet
+                : (root.checked ? root.verdict : root.currentRound.task)
+              color: !root.checked ? root.quiet : (root.wasRight ? root.sunColor : root.foreground)
               font.family: root.fontFamily
               font.pixelSize: Style.font.heading
               wrapMode: Text.WordWrap
               Behavior on color { ColorAnimation { duration: 300 } }
             }
 
-            // Set the clock: how far off the hands are, in words.
-            Text {
-              width: parent.width
-              visible: !gameArea.reading && text !== ""
-              textFormat: Text.PlainText
-              text: !root.game || root.solved ? "" : root.game.hint
-              color: root.foreground
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.heading
-              wrapMode: Text.WordWrap
+            Item { width: 1; height: Style.spacing.md }
+
+            // One press decides the round, and then the next one.
+            Row {
+              spacing: Style.spacing.lg
+              ActionButton {
+                visible: !root.checked
+                primary: true
+                enabled: root.canCheck
+                text: "Check"
+                onClicked: root.checkAnswer()
+              }
+              ActionButton {
+                visible: root.checked
+                primary: true
+                text: "Another one  →"
+                onClicked: root.nextRound()
+              }
             }
 
-            Item { width: 1; height: Style.spacing.lg }
+            Item { width: 1; height: Style.spacing.md }
 
             // Set the clock: four buttons that turn the hands.
             Row {
@@ -2531,17 +2573,20 @@ Item {
                   required property int index
                   readonly property var choice: root.currentRound.choices[index]
                   readonly property bool picked: root.chosen === index
-                  readonly property bool correct: picked && choice.right
-                  readonly property bool mistaken: picked && !choice.right
+                  // Before Check, a tap only marks the choice. After it, the
+                  // right one is named whether or not it was the one tapped.
+                  readonly property bool correct: root.checked && choice.right
+                  readonly property bool mistaken: root.checked && picked && !choice.right
                   width: choiceGrid.cellW
                   height: Style.space(76)
                   radius: root.cornerRadius
                   color: correct ? Util.alpha(root.sunColor, 0.22)
-                    : (mistaken ? Util.alpha(root.foreground, 0.10) : Util.alpha(root.foreground, 0.05))
+                    : (picked ? Color.menu.selectedBackground : Util.alpha(root.foreground, 0.05))
                   border.width: Math.max(2, Style.space(2))
                   border.color: correct ? root.sunColor
-                    : (mistaken ? Util.alpha(root.foreground, 0.30) : Util.alpha(root.foreground, 0.18))
-                  opacity: root.solved && !correct ? 0.4 : 1
+                    : (mistaken ? root.foreground
+                      : (picked ? Util.alpha(root.sunColor, 0.8) : Util.alpha(root.foreground, 0.18)))
+                  opacity: root.checked && !correct && !picked ? 0.4 : 1
                   Behavior on color { ColorAnimation { duration: 160 } }
                   Behavior on opacity { NumberAnimation { duration: 160 } }
 

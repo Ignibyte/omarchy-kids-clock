@@ -14,7 +14,7 @@ back an hour at a time, so a child can watch it become bedtime in Tokyo.
 ![The big clock on the Explorer face, Tokyo Night theme](preview.png)
 
 Before anyone is added there is still a clock: home fills the card, its own
-sky and, on the bands that have one, a full-size face. Earlier and Later move
+sky and, on the bands that have one, a full-size face. The arrows move
 that sun, and the game needs nobody at all.
 
 From the second band an analog face sits beside the digits, showing the same
@@ -52,7 +52,7 @@ The age band is a parent setting. Each band adds to the one before.
 One screen, two ways of looking: a globe on every band, and on the Navigator
 band a flat map of the world as well. Both show the same thing — where the sun
 is right now, who is in the night, and what time it is there — and the switch
-between them is at the top of the screen, beside Earlier and Later.
+between them is at the top of the screen, beside the arrows that move the sun.
 
 ### The globe
 
@@ -65,8 +65,8 @@ freely, and Find home brings it back. Tapping any dot names the place and says
 the time there: the digits and "tomorrow" on the bands that read them, the
 time in words ("It's about five to twelve in the morning"), the sky there, and
 what a child there is probably doing, which is the family's own routine moved
-to that place, the same honest guess the cards make. Earlier and Later move
-the sun here too, and the night sweeps round the globe as it goes.
+to that place, the same honest guess the cards make. The arrows move the sun
+here too, and the night sweeps round the globe as it goes.
 
 ### The flat map
 
@@ -76,11 +76,11 @@ and the fifty well-known cities — as dots to tap, and a line under the map
 says what time it is at the one you tapped.
 
 The top of the screen does not change when the view does: the same title, the
-same switch, the same Earlier, Later and Now. Only the world below it is drawn
+same switch, the same arrows and Now. Only the world below it is drawn
 differently. The shade is the real one for the shown instant, worked
 out from the sun's declination and Greenwich solar noon, so it leans towards
-one pole in December and the other in June, and it sweeps west as Earlier
-and Later move the sun. A sun marks where the sun is straight overhead, a moon
+one pole in December and the other in June, and it sweeps west as the arrows
+move the sun. A sun marks where the sun is straight overhead, a moon
 where it is the middle of the night, a ring marks home and a dot each
 person, with their time beside it. It is a flat map rather than a globe on
 purpose: it hides no hemisphere, and the shade crossing a continent is the
@@ -182,6 +182,7 @@ omarchy-shell shell setBarWidget ignibyte.kids-clock people '"Grandma=Phoenix; N
 | `homeCity` | blank | What home is called, as free text, edited on the Me screen. Blank uses the city that matches the system time zone. A city from the built-in list also places home on the map and the globe and gives its sky the right sunrise; anything else is only the name. Home's clock follows the system time zone either way |
 | `wakeTime`, `schoolStart`, `schoolEnd`, `dinnerTime`, `bedTime` | `07:00`, `08:30`, `15:00`, `18:00`, `20:00` | The family routine. "Uncle Ken is probably at school" means the child's own routine moved to Tokyo, which is honest and personal rather than a guess about another country |
 | `hourFormat` | `12` | `12` or `24`, for the bands that show digits |
+| `bestStreak` | none | The longest run of right answers in the game. The game writes it; there is no reason to set it by hand, and deleting it starts the best again |
 
 Names never leave the machine. Nothing about a child is collected.
 
@@ -198,8 +199,8 @@ it and always means one step out; `Close` is always on the right. A button in
 that row never also changes what is on the screen.
 
 What the screen you are on can *do* sits on that screen, next to the thing it
-acts on. Earlier and Later are under the sky whose sun they move. The game's
-round switch and Another one are at the top of the round. The globe and the
+acts on. The two arrows that move the sun are under the clock they move. The
+game's round switch, its score and its Check are at the top of the round. The globe and the
 flat map are switched from the top of Times on Earth. Next and Save sit beside
 the field they finish.
 
@@ -214,10 +215,11 @@ the field they finish.
 
 | On the screen | Does |
 |---|---|
-| Earlier, Later, Now | move the sun an hour, and put it back. On the clock they sit under the face, which is the thing they move; at the top of Times on Earth otherwise. All three are always there, so the row never shifts under a hand |
+| ←, →, Now | move the sun an hour, and put it back. On the clock they sit under the face, which is the thing they move; at the top of Times on Earth otherwise. All three are always there, so the row never shifts under a hand |
 | Globe, Flat map | the two ways of looking at Times on Earth (the flat map is navigator) |
 | Find home | turns the globe back to home; it sits between the two buttons that turn it |
 | Set the clock, Read the clock | the two rounds of the game |
+| Check | answers the round: right adds one to the run, wrong ends it |
 | Start again, Another one | put the hands back where they began, and take a new round |
 | Next, Save | finish the question the field is asking |
 | Remove | on a person's row, asks once |
@@ -252,7 +254,7 @@ toy clock reset (at nine when the answer is twelve itself), so the hour goes
 first and then the minutes. The hour hand is geared to the minute hand, so
 half past shows it halfway to the next numeral, which is the thing children
 find hardest about a real clock. Four round buttons turn the hands an hour or
-a step either way, and a line says which way to go and how close it is.
+a step either way.
 
 **Read the clock** does it the other way round: the hands are already set, and
 four times are offered. The three wrong ones are the mistakes a child actually
@@ -262,6 +264,18 @@ the wrong way round — so a guess that lands is a guess that was read.
 ![The set-the-clock round](preview-game.png)
 
 ![The read-the-clock round](preview-read.png)
+
+### One press, one answer
+
+Nothing says whether the answer is right until **Check** is pressed. A face
+that lit up the moment the hands landed made the game "turn the hands until it
+lights up", which is not reading a clock; so does a list of times that answers
+back on the first tap. Set the hands, or pick a time, then Check.
+
+Check ends the round either way. A right answer adds one to the run; a wrong
+one shows what the time really was and the run goes back to nothing. The score
+line says how many are right in a row and the best run so far, and the best is
+kept with the settings, so it is still there tomorrow.
 
 The time is random each round and never the same twice running. The band sets
 how fine it is: quarter hours while "half past" and "quarter to" are still
