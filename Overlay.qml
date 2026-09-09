@@ -1413,8 +1413,15 @@ Item {
             width: parent.width
             readonly property int skyRoom: clockView.height - homeHeader.height
               - content.gap - sunRow.height - Style.spacing.md
+            // How tall the sky and the face are with nobody on the clock.
+            // Worked out from the card's own width and the room going spare,
+            // never from the sky itself: the face's width is drawn from this,
+            // and the face's width sets the sky's width, which would set the
+            // sky's height, which would set the face again.
+            readonly property int aloneBlock: Math.max(content.homeSkyHeight,
+              Math.min(skyRoom, Math.round(width * 0.30)))
             height: homeHeader.height + content.gap
-              + (clockView.aloneAtHome ? homeSky.height : content.homeSkyHeight)
+              + (clockView.aloneAtHome ? aloneBlock : content.homeSkyHeight)
 
             Face {
               id: homeFace
@@ -1429,7 +1436,7 @@ Item {
               // which feeds the header's width which feeds its wrap.
               width: !visible ? 0
                 : (clockView.aloneAtHome
-                  ? Math.min(homeSky.height, Math.round(homeArea.width * 0.42))
+                  ? Math.min(homeArea.aloneBlock, Math.round(homeArea.width * 0.42))
                   : content.homeSkyHeight + content.gap + Math.round(Style.font.displayLarge * 1.3))
               minutesOfDay: root.home ? root.home.minutesOfDay : 0
 
@@ -1457,10 +1464,7 @@ Item {
               anchors.rightMargin: homeFace.visible ? content.gap * 2 : 0
               anchors.top: homeHeader.bottom
               anchors.topMargin: content.gap
-              height: clockView.aloneAtHome
-                ? Math.max(content.homeSkyHeight,
-                    Math.min(homeArea.skyRoom, Math.round(width * 0.52)))
-                : content.homeSkyHeight
+              height: clockView.aloneAtHome ? homeArea.aloneBlock : content.homeSkyHeight
               isDay: root.home ? root.home.isDay : true
               t: root.home ? root.home.t : 0.5
               bodySize: clockView.aloneAtHome ? Style.space(72) : Style.space(56)
