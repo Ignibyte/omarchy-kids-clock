@@ -9,9 +9,10 @@ Each place gets a sky with the sun on its arc by day and the moon by night,
 and the sky itself says which it is: a gradient that is darker overhead and
 lighter towards the horizon, warming as the sun gets near it, with a few
 clouds by day and a field of stars by night. A sentence says what time of day
-it is there in words. Each person gets a card:
-their own sky, whether they are awake, what they are probably doing, and
-whether it is a good time to call. Two buttons move the sun forward and
+it is there in words. Each person gets a card: their name, their time and
+their own sky. Tapping the card opens their own page — whether they are awake,
+what they are probably doing, whether it is a good time to call, and how many
+hours ahead or behind they are. Two buttons move the sun forward and
 back an hour at a time, so a child can watch it become bedtime in Tokyo.
 
 ![The big clock on the Explorer face, Tokyo Night theme](preview.png)
@@ -169,6 +170,16 @@ hands home back to the computer's own place.
 
 ![The People screen asking where Nana lives](preview-people.png)
 
+## A person's page
+
+Tapping a card on the clock opens that person: their time and whether it is
+today or tomorrow there, how many hours ahead or behind they are, their sky
+at that hour, whether they are awake, what they are probably doing, and
+whether it is a good time to ring. Left and Right step through the people
+without going back to the clock first.
+
+![Grandma's page](preview-person.png)
+
 Everything is saved to the plugin's own entry in `~/.config/omarchy/shell.json`
 through the shell, the same way the built-in panels save their settings, so
 the command line sees the same values. A saved entry has to go out to the
@@ -228,11 +239,12 @@ the field they finish.
 
 | On the screen | Does |
 |---|---|
+| a person's card | opens that person's page |
 | ←, →, Now | move the sun an hour, and put it back. On the clock they sit under the face, which is the thing they move; at the top of Times on Earth otherwise. All three are always there, so the row never shifts under a hand |
 | Globe, Flat map | the two ways of looking at Times on Earth (the flat map is navigator) |
 | the house | turns the globe back to home; it sits between the two buttons that turn it |
 | Set the clock, Read the clock | the two rounds of the game |
-| Check | answers the round: right adds one to the run, wrong ends it |
+| the tick | at the end of the row that turns the hands, answers the round: right adds one to the run, wrong ends it. In Read the clock the tap on a time is the answer, so there is no tick |
 | Start again, Another one | put the hands back where they began, and take a new round |
 | Next, Save | finish the question the field is asking |
 | Remove | on a person's row, asks once |
@@ -281,12 +293,14 @@ the wrong way round — so a guess that lands is a guess that was read.
 
 ### One press, one answer
 
-Nothing says whether the answer is right until **Check** is pressed. A face
-that lit up the moment the hands landed made the game "turn the hands until it
-lights up", which is not reading a clock; so does a list of times that answers
-back on the first tap. Set the hands, or pick a time, then Check.
+In Set the clock, nothing says whether the hands are right until **Check** is
+pressed — the fifth round button, at the end of the row that turns them. A
+face that lit up the moment the hands landed made the game "turn the hands
+until it lights up", which is not reading a clock. In Read the clock there is
+no Check: four times to choose between is already one press, and the tap is
+the answer.
 
-Check ends the round either way. A right answer adds one to the run; a wrong
+Either way the round ends there. A right answer adds one to the run; a wrong
 one shows what the time really was and the run goes back to nothing. The score
 line says how many are right in a row and the best run so far, and the best is
 kept with the settings, so it is still there tomorrow.

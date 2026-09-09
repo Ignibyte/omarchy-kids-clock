@@ -84,7 +84,6 @@ Item {
   readonly property var emptyRow: ({ name: "", city: "", zone: "", ready: false, isDay: true, t: 0.5, sentence: "",
     call: "good", callWords: "", timeText: "", dayLabel: "", offsetWords: "", awake: false })
   readonly property var emptyEntry: ({ kind: "person", name: "", place: "", time: "" })
-  readonly property string scrubWords: clock ? clock.scrubWords : ""
   readonly property bool scrubbing: clock ? clock.scrubMinutes !== 0 : false
   readonly property var rules: clock ? clock.rules : Model.bandRules("explorer")
   readonly property bool hasFace: rules ? rules.face === true : false
@@ -121,7 +120,9 @@ Item {
   property bool globeAtHome: false
   readonly property var globeDots: clock ? clock.globeDots : []
   readonly property var popular: Model.popularSpots(cities)
-  readonly property var spots: clock ? Model.globeSpotList(clock.homeName, clock.homeCity, clock.people, popular) : []
+  readonly property var spots: clock
+    ? Model.globeSpotList(clock.homeName, clock.homeCity, clock.people, popular, clock.namedCity !== null)
+    : []
   readonly property var picked: pickedSpot >= 0 && pickedSpot < spots.length ? spots[pickedSpot] : null
   // The spots the flat map draws as plain dots: everything that is not home
   // or one of the people, since those already have a named marker there.
@@ -216,6 +217,30 @@ Item {
       if (spots[i].place === name || spots[i].name === name) { pickedSpot = i; return true }
     }
     return false
+  }
+
+  // ---- one person, in full. The card on the clock says who and when; this
+  // says what they are probably doing, whether it is a good time to ring, and
+  // how far ahead or behind they are.
+  property bool showPerson: false
+  property int personIndex: -1
+  readonly property var personRow: showPerson && personIndex >= 0 && personIndex < rows.length
+    ? rows[personIndex] : null
+
+  function openPerson(index) {
+    if (playing || index < 0 || index >= rows.length) return
+    showEarth = false
+    showPeople = false
+    showMe = false
+    personIndex = index
+    showPerson = true
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function closePerson() {
+    showPerson = false
+    personIndex = -1
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
   // ---- Me: what home is called and where it is. Its own screen, because it
@@ -464,8 +489,8 @@ Item {
   // The best run so far, kept with the rest of the settings so it is still
   // there tomorrow.
   readonly property int bestStreak: clock ? Math.max(0, parseInt(Model.setting(clock.config, "bestStreak", 0), 10) || 0) : 0
-  readonly property bool canCheck: playing && !checked
-    && (gameMode === "read" ? chosen >= 0 : !!currentRound)
+  // Only the hands need a Check; a tap on a time is the answer itself.
+  readonly property bool canCheck: playing && !checked && gameMode === "set" && !!currentRound
   readonly property string otherMode: gameMode === "set" ? "read" : "set"
   readonly property string otherModeName: gameMode === "set" ? "Read the clock" : "Set the clock"
   readonly property int gameStep: rules && rules.gameStep > 0 ? rules.gameStep : 5
@@ -503,7 +528,10 @@ Item {
   // The one press that decides the round. A wrong one ends the run; a right
   // one adds to it, and a new best is written down.
   function checkAnswer() {
-    if (!canCheck) return
+    // `canCheck` is about the Check button, which only the hands need; a tap
+    // on a time comes straight here.
+    if (!playing || !currentRound || checked) return
+    if (currentRound.mode === "read" && chosen < 0) return
     var right = currentRound.mode === "read"
       ? (chosen >= 0 && currentRound.choices[chosen].right)
       : (!!game && game.solved)
@@ -527,6 +555,7 @@ Item {
   function pickTime(index) {
     if (!playing || !currentRound || currentRound.mode !== "read" || checked) return
     chosen = index
+    checkAnswer()
   }
 
   function stopGame() {
@@ -556,6 +585,7 @@ Item {
   // add flow it walks back through the questions before leaving the list.
   function stepBack() {
     if (playing) { stopGame(); return }
+    if (showPerson) { closePerson(); return }
     if (showMe) { closeMe(); return }
     if (showPeople) {
       if (peopleMode === "remove") { cancelRemove(); return }
@@ -572,6 +602,8 @@ Item {
     root.showEarth = false
     root.showPeople = false
     root.showMe = false
+    root.showPerson = false
+    root.personIndex = -1
     root.peopleMode = "list"
     root.pending = null
     if (root.clock) root.clock.resetScrub()
@@ -960,21 +992,13 @@ Item {
   component HomeHeader: Item {
     id: header
     readonly property int sentenceHeight: Math.ceil(sentenceMetrics.height * 2)
-    readonly property int bannerHeight: Math.ceil(bannerMetrics.height)
-    height: Math.max(headerTime.implicitHeight,
-      sentenceHeight + Style.spacing.xs + bannerHeight)
+    height: Math.max(headerTime.implicitHeight, sentenceHeight)
 
     FontMetrics {
       id: sentenceMetrics
       font.family: root.fontFamily
       font.pixelSize: Style.font.displayLarge
     }
-    FontMetrics {
-      id: bannerMetrics
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.title
-    }
-
     Text {
       id: headerTime
       anchors.right: parent.right
@@ -1006,18 +1030,6 @@ Item {
         font.pixelSize: Style.font.displayLarge
         wrapMode: Text.WordWrap
         maximumLineCount: 2
-        elide: Text.ElideRight
-        verticalAlignment: Text.AlignTop
-      }
-      Text {
-        width: parent.width
-        height: header.bannerHeight
-        textFormat: Text.PlainText
-        text: root.scrubWords === "" ? "" : root.scrubWords + "."
-        color: root.foreground
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.title
-        font.bold: true
         elide: Text.ElideRight
         verticalAlignment: Text.AlignTop
       }
@@ -1138,6 +1150,7 @@ Item {
     property int delta: 5
     property bool spins: false
     property bool homes: false
+    property bool answers: false
     property int glyphSize: Style.font.displayLarge
     spacing: Style.spacing.xs
 
@@ -1167,8 +1180,12 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: turnButton.homes ? root.centreGlobeOnHome()
-          : (turnButton.spins ? root.spinGlobe(turnButton.delta) : root.turn(turnButton.delta))
+        onClicked: {
+          if (turnButton.answers) { if (root.checked) root.nextRound(); else root.checkAnswer(); return }
+          if (turnButton.homes) { root.centreGlobeOnHome(); return }
+          if (turnButton.spins) root.spinGlobe(turnButton.delta)
+          else root.turn(turnButton.delta)
+        }
       }
     }
 
@@ -1435,6 +1452,17 @@ Item {
             if (event.key === Qt.Key_Escape) { root.closeMe(); event.accepted = true }
             return
           }
+          if (root.showPerson && !root.playing) {
+            if (event.key === Qt.Key_Escape) { root.closePerson(); event.accepted = true }
+            else if (event.key === Qt.Key_Left || event.key === Qt.Key_Right) {
+              // Step through the people without going back to the clock first.
+              var step = event.key === Qt.Key_Right ? 1 : -1
+              if (root.rows.length > 0)
+                root.personIndex = (root.personIndex + step + root.rows.length) % root.rows.length
+              event.accepted = true
+            }
+            return
+          }
           if (root.showPeople) {
             if (event.key === Qt.Key_Escape) {
               if (root.peopleMode === "remove") root.cancelRemove()
@@ -1521,7 +1549,7 @@ Item {
         // ---- the clock
         Item {
           id: clockView
-          visible: !root.playing && !root.showMap && !root.showPeople && !root.showMe && !root.showGlobe
+          visible: !root.playing && !root.showMap && !root.showPeople && !root.showMe && !root.showPerson && !root.showGlobe
           anchors.fill: parent
           anchors.bottomMargin: toolbar.height + content.gap
 
@@ -1689,66 +1717,25 @@ Item {
                     elide: Text.ElideRight
                   }
 
-                  // The sky takes whatever the words leave, so the last line
-                  // never runs under the card's edge.
+                  // The sky takes the rest of the card.
                   Sky {
                     width: parent.width
-                    height: Math.max(Style.space(56), cardColumn.height - cardHead.height - cardPlace.height - cardState.height
-                      - cardSentence.height - cardColumn.spacing * 4
-                      - (cardCall.visible ? cardCall.height + cardColumn.spacing : 0)
-                      - (cardOffset.visible ? cardOffset.height + cardColumn.spacing : 0))
+                    height: Math.max(Style.space(56),
+                      cardColumn.height - cardHead.height - cardPlace.height - cardColumn.spacing * 2)
                     isDay: personCard.row.isDay
                     t: personCard.row.t
                     bodySize: Style.space(30)
                   }
+                }
 
-                  Text {
-                    id: cardState
-                    width: parent.width
-                    textFormat: Text.PlainText
-                    text: personCard.row.ready ? (personCard.row.awake ? "Awake" : "Asleep") : "..."
-                    color: root.foreground
-                    font.family: root.fontFamily
-                    font.pixelSize: personCard.dense ? Style.font.heading : Style.font.display
-                  }
-
-                  Text {
-                    id: cardSentence
-                    width: parent.width
-                    textFormat: Text.PlainText
-                    text: personCard.row.sentence
-                    color: root.quiet
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.body
-                    wrapMode: Text.WordWrap
-                    maximumLineCount: 3
-                    elide: Text.ElideRight
-                  }
-
-                  Text {
-                    id: cardCall
-                    width: parent.width
-                    visible: personCard.row.ready
-                    textFormat: Text.PlainText
-                    text: personCard.row.callWords + (personCard.squeeze === 0 && personCard.row.offsetWords !== "" ? personCard.dot + personCard.row.offsetWords : "")
-                    color: personCard.row.call === "good" ? root.accent : root.quiet
-                    font.family: root.fontFamily
-                    font.pixelSize: personCard.dense ? Style.font.body : Style.font.title
-                    font.bold: personCard.row.call === "good"
-                    elide: Text.ElideRight
-                  }
-
-                  Text {
-                    id: cardOffset
-                    width: parent.width
-                    visible: personCard.squeeze > 0 && personCard.row.ready && personCard.row.offsetWords !== ""
-                    textFormat: Text.PlainText
-                    text: personCard.row.offsetWords
-                    color: root.quiet
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.body
-                    elide: Text.ElideRight
-                  }
+                // What they are doing and whether to ring them is a page of
+                // its own now, a tap away, rather than four lines of small
+                // type on a card standing beside two others.
+                MouseArea {
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.openPerson(personCard.index)
                 }
               }
             }
@@ -1762,7 +1749,7 @@ Item {
         // sun's own buttons all live up here with what they act on.
         Item {
           id: earthBar
-          visible: !root.playing && root.showEarth
+          visible: !root.playing && root.showEarth && !root.showPerson
           anchors.left: parent.left
           anchors.right: parent.right
           anchors.top: parent.top
@@ -1809,7 +1796,7 @@ Item {
 
         Item {
           id: mapView
-          visible: !root.playing && root.showMap && !root.showPeople && !root.showMe
+          visible: !root.playing && root.showMap && !root.showPeople && !root.showMe && !root.showPerson
           anchors.left: parent.left
           anchors.right: parent.right
           anchors.top: earthBar.bottom
@@ -1862,6 +1849,109 @@ Item {
               id: pickMetrics
               font.family: root.fontFamily
               font.pixelSize: Style.font.title
+            }
+          }
+        }
+
+        // ---- one person, in full: their sky across the top, then what the
+        // card no longer has room to say.
+        Item {
+          id: personView
+          visible: !root.playing && root.showPerson
+          anchors.fill: parent
+          anchors.bottomMargin: toolbar.height + content.gap
+          readonly property var row: root.personRow || root.emptyRow
+
+          Text {
+            id: personName
+            anchors.left: parent.left
+            anchors.top: parent.top
+            textFormat: Text.PlainText
+            text: personView.row.name
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.displayLarge
+            font.bold: true
+          }
+
+          Text {
+            id: personWhen
+            anchors.right: parent.right
+            anchors.baseline: personName.baseline
+            textFormat: Text.PlainText
+            text: personView.row.timeText
+              + (personView.row.dayLabel === "" || personView.row.dayLabel === "today"
+                ? "" : "  ·  " + personView.row.dayLabel)
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.displayLarge
+            font.bold: true
+          }
+
+          Text {
+            id: personPlace
+            anchors.top: personName.bottom
+            anchors.topMargin: Style.spacing.xs
+            anchors.left: parent.left
+            anchors.right: parent.right
+            textFormat: Text.PlainText
+            text: personView.row.city
+              + (personView.row.offsetWords === "" ? "" : "  ·  " + personView.row.offsetWords)
+            color: root.quiet
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.title
+            elide: Text.ElideRight
+          }
+
+          Sky {
+            id: personSky
+            anchors.top: personPlace.bottom
+            anchors.topMargin: content.gap
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: Math.round(Math.min(parent.height * 0.46, width * 0.34))
+            isDay: personView.row.isDay
+            t: personView.row.t
+            bodySize: Style.space(64)
+          }
+
+          Column {
+            anchors.top: personSky.bottom
+            anchors.topMargin: content.gap
+            anchors.left: parent.left
+            anchors.right: parent.right
+            spacing: Style.spacing.sm
+
+            Text {
+              width: parent.width
+              textFormat: Text.PlainText
+              text: !personView.row.ready ? "Finding the time there..."
+                : (personView.row.awake ? "Awake" : "Asleep")
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.display
+              font.bold: true
+            }
+
+            Text {
+              width: parent.width
+              textFormat: Text.PlainText
+              text: personView.row.sentence
+              color: root.quiet
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.heading
+              wrapMode: Text.WordWrap
+            }
+
+            Text {
+              width: parent.width
+              visible: personView.row.ready && personView.row.callWords !== ""
+              textFormat: Text.PlainText
+              text: personView.row.callWords
+              color: personView.row.call === "good" ? root.accent : root.quiet
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.heading
+              font.bold: personView.row.call === "good"
             }
           }
         }
@@ -2387,7 +2477,7 @@ Item {
         // and on the right what the tapped place says.
         Item {
           id: globeView
-          visible: !root.playing && root.showGlobe && !root.showPeople && !root.showMe
+          visible: !root.playing && root.showGlobe && !root.showPeople && !root.showMe && !root.showPerson
           anchors.left: parent.left
           anchors.right: parent.right
           anchors.top: earthBar.bottom
@@ -2624,35 +2714,22 @@ Item {
 
             Item { width: 1; height: Style.spacing.md }
 
-            // One press decides the round, and then the next one.
-            Row {
-              spacing: Style.spacing.lg
-              ActionButton {
-                visible: !root.checked
-                primary: true
-                enabled: root.canCheck
-                text: "Check"
-                onClicked: root.checkAnswer()
-              }
-              ActionButton {
-                visible: root.checked
-                primary: true
-                text: "Another one  →"
-                onClicked: root.nextRound()
-              }
-            }
-
-            Item { width: 1; height: Style.spacing.md }
-
-            // Set the clock: four buttons that turn the hands.
+            // Set the clock: the four buttons that turn the hands, and at the
+            // end of the same row the one that answers with them.
             Row {
               visible: !gameArea.reading
               anchors.horizontalCenter: parent.horizontalCenter
-              spacing: Style.spacing.xl
+              spacing: Style.spacing.lg
               TurnButton { glyph: "«"; caption: "an hour"; delta: -60 }
               TurnButton { glyph: "‹"; caption: root.stepWords; delta: -root.gameStep }
               TurnButton { glyph: "›"; caption: root.stepWords; delta: root.gameStep }
               TurnButton { glyph: "»"; caption: "an hour"; delta: 60 }
+              TurnButton {
+                glyph: root.checked ? "→" : Model.TICK_GLYPH
+                caption: root.checked ? "another" : "check"
+                answers: true
+                glyphSize: root.checked ? Style.font.displayLarge : Style.font.display
+              }
             }
 
             // Read the clock: four times to choose between.
@@ -2725,6 +2802,16 @@ Item {
                 }
               }
             }
+
+            // Read the clock: once a time has been tapped, the way on, under
+            // the choices it judges rather than floating above them.
+            ActionButton {
+              visible: gameArea.reading && root.checked
+              anchors.horizontalCenter: parent.horizontalCenter
+              primary: true
+              text: "Another one  →"
+              onClicked: root.nextRound()
+            }
           }
         }
 
@@ -2740,7 +2827,7 @@ Item {
           anchors.bottom: parent.bottom
           height: Math.max(actions.implicitHeight, closeButton.implicitHeight)
 
-          readonly property bool onClock: !root.playing && !root.showPeople && !root.showMe && !root.showEarth
+          readonly property bool onClock: !root.playing && !root.showPeople && !root.showMe && !root.showPerson && !root.showEarth
 
           Flow {
             id: actions

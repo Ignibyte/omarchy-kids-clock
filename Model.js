@@ -606,6 +606,8 @@ var SUN_GLYPH = ""
 var MOON_GLYPH = ""
 // A house from the same icon font, for the button that finds home.
 var HOME_GLYPH = ""
+// A tick, for the button that answers a round.
+var TICK_GLYPH = ""
 
 function barGlyph(isDay) {
   return isDay ? SUN_GLYPH : MOON_GLYPH
@@ -1036,10 +1038,12 @@ function popularSpots(cities) {
 
 // Every marker the globe shows: home, the people, then the popular spots
 // that none of them already covers.
-function globeSpotList(homeName, homeCity, people, popular) {
+function globeSpotList(homeName, homeCity, people, popular, homeIsNamed) {
   var out = []
   if (homeCity && homeCity.lat !== undefined && homeCity.lat !== null) {
-    out.push({ kind: "home", name: homeName || homeCity.name, place: homeCity.name, where: spotWhere(homeCity),
+    var label = homeName || homeCity.name
+    out.push({ kind: "home", name: label, place: label,
+      where: homeIsNamed === false ? "" : spotWhere(homeCity),
       zone: homeCity.zone, lat: homeCity.lat, lon: homeCity.lon })
   }
   for (var i = 0; i < (people || []).length; i++) {
@@ -1186,6 +1190,7 @@ if (typeof module !== "undefined") {
     globeMarkers: globeMarkers,
     spotView: spotView,
     MOON_GLYPH: MOON_GLYPH,
-    HOME_GLYPH: HOME_GLYPH
+    HOME_GLYPH: HOME_GLYPH,
+    TICK_GLYPH: TICK_GLYPH
   }
 }
