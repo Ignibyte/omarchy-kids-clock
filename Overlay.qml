@@ -1,5 +1,6 @@
 import Quickshell
 import Quickshell.Wayland
+import Quickshell.Io
 import QtQuick
 import QtQuick.Shapes
 import qs.Commons
@@ -292,6 +293,45 @@ Item {
     if (meDraft.trim() === "") { saveMe(""); return }
     var option = meOptions[meIndex]
     if (option) saveMe(option.key)
+  }
+
+  // ---- the age band, a parent setting changed from the Me screen.
+  // The band decides whether a child gets a face, a game, a map, or none of
+  // them, and it lived only in a terminal command. It now sits on the Me
+  // screen (the grown-up's screen) behind a parent check.
+  readonly property var bandChoices: [
+    { key: "explorer",  label: "Explorer",  ages: "3–5" },
+    { key: "tinkerer",  label: "Tinkerer",  ages: "5–7" },
+    { key: "navigator", label: "Navigator", ages: "8–10" }
+  ]
+  property string pendingBand: ""
+  property bool bandBusy: false
+
+  function chooseBand(key) {
+    if (bandBusy || !clock) return
+    var next = String(key || "")
+    if (next === "" || String(clock.band) === next) return
+    pendingBand = next
+    bandBusy = true
+    bandGate.running = true
+  }
+
+  // Changing the band asks a grown-up first: pkexec raises the polkit prompt
+  // Omarchy's agent already runs, and only a successful auth writes the new
+  // band, through the same save path as every other setting. The gate proves
+  // a parent is present; it does not make the setting root-owned, so a child
+  // who can edit shell.json can still change it — the hub's own line on
+  // enforcement. If pkexec is missing the prompt simply fails and nothing
+  // changes; the Me screen shows the terminal command as a fallback.
+  Process {
+    id: bandGate
+    command: ["pkexec", "/usr/bin/true"]
+    onExited: function(exitCode) {
+      root.bandBusy = false
+      if (exitCode === 0 && root.pendingBand !== "" && root.clock)
+        root.persistSettings({ band: root.pendingBand })
+      root.pendingBand = ""
+    }
   }
 
   property bool showPeople: false
@@ -2013,6 +2053,7 @@ Item {
           }
 
           Column {
+            id: meHomeColumn
             anchors.top: meNow.bottom
             anchors.topMargin: content.gap * 2
             width: parent.width
@@ -2155,6 +2196,95 @@ Item {
                   }
                 }
               }
+            }
+          }
+
+          Column {
+            id: meBandColumn
+            anchors.top: meHomeColumn.bottom
+            anchors.topMargin: content.gap * 2
+            width: parent.width
+            spacing: Style.spacing.lg
+
+            Text {
+              width: parent.width
+              textFormat: Text.PlainText
+              text: "Age band"
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.display
+              wrapMode: Text.WordWrap
+            }
+
+            Text {
+              width: parent.width
+              textFormat: Text.PlainText
+              text: "This decides what a child sees — sun and words, the digits and the game, or the map. Changing it asks a grown-up first."
+              color: root.quiet
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              wrapMode: Text.WordWrap
+            }
+
+            Row {
+              width: parent.width
+              spacing: Style.spacing.sm
+
+              Repeater {
+                model: root.bandChoices
+
+                Rectangle {
+                  id: bandPill
+                  required property var modelData
+                  readonly property bool selected: root.clock && String(root.clock.band) === modelData.key
+                  width: (parent.width - Style.spacing.sm * 2) / 3
+                  height: Style.space(52)
+                  radius: root.cornerRadius
+                  color: selected ? Color.menu.selectedBackground : Util.alpha(root.foreground, 0.04)
+                  border.width: Math.max(1, Style.space(1))
+                  border.color: selected ? Util.alpha(root.accent, 0.8) : Util.alpha(root.foreground, 0.10)
+                  opacity: root.bandBusy ? 0.6 : 1
+
+                  MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    enabled: !root.bandBusy
+                    onClicked: root.chooseBand(bandPill.modelData.key)
+                  }
+
+                  Column {
+                    anchors.centerIn: parent
+                    spacing: Style.space(2)
+                    Text {
+                      anchors.horizontalCenter: parent.horizontalCenter
+                      textFormat: Text.PlainText
+                      text: bandPill.modelData.label
+                      color: root.foreground
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.heading
+                      font.bold: bandPill.selected
+                    }
+                    Text {
+                      anchors.horizontalCenter: parent.horizontalCenter
+                      textFormat: Text.PlainText
+                      text: bandPill.modelData.ages
+                      color: root.quiet
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.caption
+                    }
+                  }
+                }
+              }
+            }
+
+            Text {
+              width: parent.width
+              textFormat: Text.PlainText
+              text: "Or from a terminal: omarchy-shell shell setBarWidget ignibyte.kids-clock band '\"" + (root.clock ? root.clock.band : "explorer") + "\"' '{}'"
+              color: root.quiet
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              wrapMode: Text.Wrap
             }
           }
         }
