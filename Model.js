@@ -523,6 +523,19 @@ function callWords(call) {
   return "Good time to call"
 }
 
+// The shape the card's status dot takes, so the three states are told apart by
+// form and not by a colour ramp. On the card the dot is now the only answer to
+// "can I call them?", and two of the three states used to be the same colour at
+// different alphas: unreadable in greyscale, across a room, or with a colour
+// vision deficiency. A filled disc, a hollow ring and a crescent survive all
+// three; the crescent keeps asleep on the moon the rest of the clock already
+// uses. Colour still rides along as a second cue, never the only one.
+function callMark(call) {
+  if (call === "asleep") return "crescent"
+  if (call === "busy") return "ring"
+  return "disc"
+}
+
 function homeSentence(city, minutesOfDay) {
   return "It's " + timeWords(minutesOfDay) + " here in " + city + "."
 }
@@ -1154,6 +1167,7 @@ if (typeof module !== "undefined") {
     timeWords: timeWords,
     activityAt: activityAt,
     callWords: callWords,
+    callMark: callMark,
     personSentence: personSentence,
     homeSentence: homeSentence,
     buildRow: buildRow,

@@ -1717,14 +1717,41 @@ Item {
                       font.bold: true
                       elide: Text.ElideRight
                     }
-                    Rectangle {
+                    // The one answer to "can I call them?" a pre-reader has, so
+                    // the three states are told apart by shape, not a colour ramp:
+                    // a filled disc (good), a hollow ring (busy) and the night
+                    // sky's own crescent moon (asleep). Colour rides along as a
+                    // second cue, never the only one; the moon keeps asleep on the
+                    // same moon the rest of the clock uses.
+                    Item {
                       id: stateDot
                       anchors.verticalCenter: parent.verticalCenter
                       width: Style.space(14)
                       height: width
-                      radius: width / 2
-                      color: personCard.row.call === "good" ? root.goodDot : (personCard.row.call === "busy" ? root.busyDot : root.asleepDot)
-                      Behavior on color { ColorAnimation { duration: 160 } }
+                      readonly property string mark: Model.callMark(personCard.row.call)
+                      readonly property color tone: personCard.row.call === "good" ? root.goodDot
+                        : (personCard.row.call === "busy" ? root.busyDot : root.asleepDot)
+
+                      Rectangle {
+                        anchors.fill: parent
+                        radius: width / 2
+                        visible: stateDot.mark === "disc"
+                        color: stateDot.tone
+                        Behavior on color { ColorAnimation { duration: 160 } }
+                      }
+                      Rectangle {
+                        anchors.fill: parent
+                        radius: width / 2
+                        visible: stateDot.mark === "ring"
+                        color: "transparent"
+                        border.width: Math.max(2, Style.space(2))
+                        border.color: stateDot.tone
+                        Behavior on border.color { ColorAnimation { duration: 160 } }
+                      }
+                      Moon {
+                        anchors.fill: parent
+                        visible: stateDot.mark === "crescent"
+                      }
                     }
                   }
 
