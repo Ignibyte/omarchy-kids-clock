@@ -321,11 +321,15 @@ Item {
   // band, through the same save path as every other setting. The gate proves
   // a parent is present; it does not make the setting root-owned, so a child
   // who can edit shell.json can still change it — the hub's own line on
-  // enforcement. If pkexec is missing the prompt simply fails and nothing
-  // changes; the Me screen shows the terminal command as a fallback.
+  // enforcement. If pkexec is missing nothing changes; the Me screen shows
+  // the terminal command as a fallback. The gate runs through sh on purpose:
+  // sh is always there, so a missing pkexec is a plain nonzero exit that
+  // reaches onExited and lets the gate recover — a bare pkexec fails to
+  // spawn, onExited never fires, and bandBusy stays set until the shell
+  // restarts.
   Process {
     id: bandGate
-    command: ["pkexec", "/usr/bin/true"]
+    command: ["sh", "-c", "exec pkexec /usr/bin/true"]
     onExited: function(exitCode) {
       root.bandBusy = false
       if (exitCode === 0 && root.pendingBand !== "" && root.clock)

@@ -138,8 +138,9 @@ you want them back.
 Omarchy plugins run unsandboxed inside `omarchy-shell` with your permissions.
 This one runs `bash` (a one-line loop that asks `date` for each zone's
 offset), `timedatectl` for the system zone, `omarchy-shell` from the bar
-chip to open the big clock, and `pkexec /usr/bin/true` for the parent check
-that guards the age band on the Me screen — nothing runs as root beyond that
+chip to open the big clock, and `sh -c 'exec pkexec /usr/bin/true'` for the
+parent check that guards the age band on the Me screen — nothing runs as root
+beyond that
 `true`. It reads its own `data/` files and nothing else on disk. It makes no
 network requests of its own. The only thing it writes is its own entry in
 `~/.config/omarchy/shell.json`, through the shell's own save call, when
