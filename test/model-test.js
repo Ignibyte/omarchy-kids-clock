@@ -148,6 +148,17 @@ check("the routine says what people are doing and whether to call", () => {
   assert.strictEqual(Model.timeWords(15 * 60), "afternoon")
 })
 
+check("the card status mark is a distinct shape per call state", () => {
+  // The dot is the only answer to "can I call them?" on the card, so the three
+  // states have to be told apart by form, not by a colour ramp. Busy and asleep
+  // are the pair that matters most, and used to collide as two greys.
+  const marks = ["good", "busy", "asleep"].map(Model.callMark)
+  assert.deepStrictEqual(marks, ["disc", "ring", "crescent"])
+  assert.strictEqual(new Set(marks).size, 3)
+  // Anything unexpected falls back to the "good" shape rather than nothing.
+  assert.strictEqual(Model.callMark("something-else"), "disc")
+})
+
 check("rows and the home carry the words a child reads", () => {
   const rules = Model.bandRules("tinkerer")
   const utc = Date.UTC(2026, 8, 5, 23, 30) // Saturday 18:30 in Chicago, Sunday 08:30 in Tokyo
