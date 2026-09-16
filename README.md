@@ -137,12 +137,16 @@ you want them back.
 
 Omarchy plugins run unsandboxed inside `omarchy-shell` with your permissions.
 This one runs `bash` (a one-line loop that asks `date` for each zone's
-offset), `timedatectl` for the system zone, and `omarchy-shell` from the bar
-chip to open the big clock. It reads its own `data/` files and nothing else on
-disk. It makes no network requests of its own. The only thing it writes is its
-own entry in `~/.config/omarchy/shell.json`, through the shell's own save call,
-when someone adds or removes a person or names home. There is no lock on the
-People or Me screens: a child can reach them too.
+offset), `timedatectl` for the system zone, `omarchy-shell` from the bar
+chip to open the big clock, and `sh -c 'exec pkexec /usr/bin/true'` for the
+parent check that guards the age band on the Me screen — nothing runs as root
+beyond that
+`true`. It reads its own `data/` files and nothing else on disk. It makes no
+network requests of its own. The only thing it writes is its own entry in
+`~/.config/omarchy/shell.json`, through the shell's own save call, when
+someone adds or removes a person, names home, or changes the band. A child can
+reach the People and Me screens too; only the age band asks for a grown-up
+first, and that is a check rather than a lock.
 
 ## Adding people
 
@@ -170,6 +174,14 @@ map and the globe, and gives the sky the right sunrise for that latitude
 instead of the one that belongs to the system zone. Saving an empty field
 hands home back to the computer's own place.
 
+The age band is set here too, since Me is the grown-up's screen. It shows the
+three bands with their ages; tapping one asks for a parent's authentication
+(through `pkexec`, the polkit prompt the Omarchy shell already answers) before
+the band changes. This is a parent check, not a lock: it confirms a grown-up
+is present, and does not make the setting root-owned — a child who can edit
+`shell.json` can still change it. If the prompt cannot run, the same screen
+shows the exact terminal command instead.
+
 ![The People screen asking where Nana lives](preview-people.png)
 
 ## A person's page
@@ -193,7 +205,8 @@ two people in a row loses one of them.
 ## Settings
 
 Omarchy has no settings screen for plugins yet. Apart from the People
-screen, the settings are edited on the command line or in the plugin's entry
+screen, and the age band (changed on the Me screen behind a parent check),
+the settings are edited on the command line or in the plugin's entry
 in `~/.config/omarchy/shell.json`:
 
 ```bash
